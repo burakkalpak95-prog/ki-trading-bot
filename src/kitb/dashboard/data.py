@@ -281,3 +281,35 @@ def performance(trades: pd.DataFrame, dailies: dict[str, pd.DataFrame], starting
             "verdict": verdict, "closed": n,
             "winrate": round(float((closed["close_profit_abs"] > 0).mean()), 3) if n else None,
             "since": start}
+
+
+def fleet_table(starting_balance: float, user_data: Path | None = None) -> pd.DataFrame:
+    """Alle Paper-Bots auf einen Blick: Art, läuft, Runde, Trades, Ergebnis der aktuellen Runde und aller Runden."""
+    from kitb import paper
+
+    project = load_project_config()
+    rows = []
+    for bot in paper.paper_ids():
+        if not ever_started(bot, user_data):
+            continue
+        spec = project.get("paper_strategies", {}).get(bot) or project["bots"].get(bot, {})
+        mode = spec.get("mode") or "learning"
+        kind = {"candidate": "Kandidat (feste Regel)", "explore": "Datensammler", "learning": "KI-Bot (lernt täglich)"}[mode]
+        if spec.get("ai_filter"):
+            kind += " + KI-Filter"
+        cur = paper_trades(bot, user_data)
+        closed = cur[cur["is_open"] == 0] if not cur.empty else cur
+        pnl = float(closed["close_profit_abs"].fillna(0).sum()) if not closed.empty else 0.0
+        rounds = sorted(paper.rounds_dir(bot, user_data).glob("round-*.sqlite"))
+        past = 0.0
+        for r in rounds:
+            t = _query(r, "SELECT close_profit_abs FROM trades WHERE is_open = 0")
+            past += float(t["close_profit_abs"].fillna(0).sum()) if not t.empty else 0.0
+        age = paper._log_age_seconds(bot, user_data)
+        rows.append({"Bot": bot, "Art": kind, "Strategie": spec.get("strategy", ""),
+                     "läuft": "🟢" if age is not None and age <= paper.HEARTBEAT_MAX_AGE_S else "🔴",
+                     "Runde": len(rounds) + 1, "Trades (Runde)": len(cur),
+                     "offen": int((cur["is_open"] == 1).sum()) if not cur.empty else 0,
+                     "Ergebnis Runde (%)": round(pnl / starting_balance, 4),
+                     "Ergebnis alle Runden (USDT)": round(pnl + past, 2)})
+    return pd.DataFrame(rows)

@@ -94,10 +94,19 @@ CREATE TABLE IF NOT EXISTS strategy_approvals (
     actor TEXT NOT NULL,
     reason TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ai_filter_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    n_trades INTEGER NOT NULL,
+    n_holdout INTEGER NOT NULL,
+    metrics TEXT NOT NULL,
+    importances TEXT NOT NULL,
+    model_file TEXT NOT NULL
+);
 """
 
 TABLES = ("source_events", "validation_reports", "backtest_runs", "decisions", "model_versions", "model_events",
-          "strategy_approvals")
+          "strategy_approvals", "ai_filter_versions")
 
 
 def _now() -> str:

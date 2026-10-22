@@ -180,3 +180,22 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   (dry_run, keine Keys, eigene DB, Risikomodul, Not-Stopp).
 - Eigenes Compose-Profil `paper-trend`, damit nicht versehentlich die KI-Bots ohne Freigabe in eine Neustart-Schleife geraten.
 
+
+## ADR-016: Lernende Paper-Flotte mit KI-Gedächtnis (Freigabe Burak, 22.10.2026)
+
+- Anlass: Burak will, dass die KI im Paper-Trading laufend lernt, statt monatelang nur eine träge Regel zu beobachten.
+- **Lernmodus** (`bots`, Freigabe `kitb strategies approve --id bot_a|bot_b|fleet`): KI-Bots laufen im Dry-Run ohne
+  freigegebene Modellversion; FreqAI trainiert alle 24 h mit den neuesten Kursen neu (`paper_learning.retrain_hours`).
+- **Datensammler-Flotte** (`paper_strategies` mit `mode: explore`): 7 Strategien unterschiedlicher Art (Trend, Momentum,
+  Mean-Reversion, Ausbruch, Volatilität; 1h und 1d) plus 7 Kopien mit KI-Filter (`ai_filter: true`). Die Kopien ohne Filter
+  sind die Kontrollgruppe – nur der Vergleich zeigt, ob der Filter hilft (Schutz gegen Selbstbestätigung).
+- **Runden:** Erreicht ein Lern-/Sammler-Bot sein Drawdown-Limit, löst er nicht mehr den globalen Not-Stopp aus, sondern
+  beendet seine Runde; `kitb paper run` archiviert die DB (`paper/<id>/rounds/`) und startet mit gleichem Startkapital
+  (10.000 USDT) neu. Für `candidate` (trend_d1) und alles Weitere gilt der globale Not-Stopp unverändert.
+- **KI-Gedächtnis** (`kitb.ai_memory`, Dienst `ai-memory`): täglich alle abgeschlossenen Trades aller Bots und Runden
+  (+ einmalig historische Backtest-Trades als Startwissen) mit Marktlage beim Einstieg (nur abgeschlossene Tageskerzen
+  davor). Klassifikator „Trade lohnt sich?“ wird auf den älteren 80 % trainiert und auf den jüngsten 20 % gemessen
+  (Trefferquote, AUC, Gewinn der erlaubten Trades); danach auf allem neu trainiert und von den Filter-Bots genutzt.
+  Der Filter kann nur ablehnen, nie ein Risikolimit aufheben. Versionen in `ai_filter_versions`.
+- Seite „Was hat die KI gelernt?“: Trefferquote heute vs. Version 1 (%-Punkte), Vorsprung vor Raten, Filter-Vorteil je
+  Trade, Gedächtnisgröße, wichtigste Merkmale, Ampel. Alles nur virtuelles Kapital; Live bleibt gesperrt.

@@ -2,6 +2,9 @@
 
 Regel-Strategien haben keine Modellversion. Damit trotzdem kein Bot ohne bewusste Entscheidung handelt, braucht jede
 Paper-Strategie aus ``config/project.json → paper_strategies`` eine namentliche, protokollierte Freigabe.
+
+Dieselbe Freigabe gibt es für die KI-Bots (``bots``) als **Lernmodus**: Der Bot läuft im Paper-Trading ohne freigegebene
+Modellversion und trainiert sich regelmäßig mit den neuesten Kursen neu (``paper.learning``). Nur virtuelles Kapital.
 """
 
 from typing import Any
@@ -12,7 +15,8 @@ from kitb.registry import Registry
 
 
 def _spec(paper_id: str) -> dict[str, Any]:
-    specs = load_project_config().get("paper_strategies", {})
+    project = load_project_config()
+    specs = {**project["bots"], **project.get("paper_strategies", {})}
     if paper_id not in specs:
         raise GovernanceError(f"Unbekannte Paper-Strategie: {paper_id}")
     return specs[paper_id]

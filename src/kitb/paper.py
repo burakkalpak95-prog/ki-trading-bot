@@ -43,16 +43,33 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
     if bot not in project["bots"]:
         raise ValueError(f"Unbekannter Bot: {bot}")
     mv = models.active(reg, bot)
-    if not mv or not mv.get("approved_by"):
-        raise SafetyError(f"Für {bot} ist keine freigegebene, aktive Modellversion vorhanden "
-                          "(kitb models approve/activate --by NAME).")
+    learning = None
+    if mv and mv.get("approved_by"):
+        freqai = json.loads(json.dumps(mv["config"]["freqai"]))
+        freqai["identifier"] = f"paper-{bot}-v{mv['version']}"
+        # Kontrollierter Trainingszyklus: Neutraining im freigegebenen Rhythmus, Vorhersagen verfallen danach.
+        freqai["live_retrain_hours"] = freqai["backtest_period_days"] * 24
+        freqai["expiration_hours"] = freqai["backtest_period_days"] * 24 * 2
+    else:
+        learning = strategy_approval.current(reg, bot)
+        if not learning:
+            raise SafetyError(f"Für {bot} ist weder eine freigegebene, aktive Modellversion vorhanden "
+                              "(kitb models approve/activate --by NAME) noch der Lernmodus freigegeben "
+                              "(kitb strategies approve --id BOT --by NAME --reason ...).")
+        # Lernmodus: gleiche Bot-Einstellungen wie im Vergleich, aber Neutraining in kurzem Takt mit den neuesten Kursen.
+        from kitb.ml import FREQAI_SHARED
+        from kitb.config import load_json
+
+        spec = project["bots"][bot]
+        freqai = json.loads(json.dumps(load_json(FREQAI_SHARED)["freqai"]))
+        freqai["feature_parameters"].update(spec["feature_parameters"])
+        freqai["model_training_parameters"] = spec["model_training_parameters"]
+        freqai["identifier"] = f"paper-learn-{bot}"
+        hours = project.get("paper_learning", {}).get("retrain_hours", 24)
+        freqai["live_retrain_hours"] = hours
+        freqai["expiration_hours"] = hours * 2
     d = paper_dir(bot, user_data_dir)
     d.mkdir(parents=True, exist_ok=True)
-    freqai = json.loads(json.dumps(mv["config"]["freqai"]))
-    freqai["identifier"] = f"paper-{bot}-v{mv['version']}"
-    # Kontrollierter Trainingszyklus: Neutraining im freigegebenen Rhythmus, Vorhersagen verfallen danach.
-    freqai["live_retrain_hours"] = freqai["backtest_period_days"] * 24
-    freqai["expiration_hours"] = freqai["backtest_period_days"] * 24 * 2
     cfg = load_freqtrade_config()
     cfg.update({
         "bot_name": bot,
@@ -61,7 +78,9 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
         "db_url": f"sqlite:///{(d / 'tradesv3.dryrun.sqlite').resolve()}",
         "fee": project["costs"]["fee_per_side"],
         "freqai": freqai,
-        "kitb_model_version_id": mv["id"],
+        "kitb_model_version_id": mv["id"] if learning is None else None,
+        "kitb_mode": "learning" if learning else "approved_model",
+        "kitb_strategy_approval_id": learning["id"] if learning else None,
     })
     problems = check_paper_config(cfg, project["allowed_exchanges"], project["allowed_pairs"],
                                   str((user_data_dir or paths.USER_DATA).resolve() / "paper"))
@@ -88,6 +107,9 @@ def _build_rule_config(paper_id: str, reg: Registry, project: dict[str, Any],
         "db_url": f"sqlite:///{(d / 'tradesv3.dryrun.sqlite').resolve()}",
         "fee": project["costs"]["fee_per_side"],
         "kitb_strategy_approval_id": approval["id"],
+        "kitb_mode": project["paper_strategies"][paper_id].get("mode", "candidate"),
+        "kitb_ai_filter": bool(project["paper_strategies"][paper_id].get("ai_filter")
+                               and project.get("paper_learning", {}).get("apply_ai_filter")),
     })
     cfg.pop("timeframe", None)  # Zeitintervall kommt aus der Strategie (z. B. 1d)
     problems = check_paper_config(cfg, project["allowed_exchanges"], project["allowed_pairs"],
@@ -111,7 +133,40 @@ def command(bot: str, config_path: Path, user_data_dir: Path | None = None) -> l
     return cmd + ["--logfile", str(paper_dir(bot, user_data_dir) / "freqtrade.log")]
 
 
-def _pidfile(bot: str, user_data_dir: Path | None = None) -> Path:
+def round_marker(bot: str, user_data_dir: Path | None = None) -> Path:
+    return paper_dir(bot, user_data_dir) / "NEW_ROUND.json"
+
+
+def rounds_dir(bot: str, user_data_dir: Path | None = None) -> Path:
+    return paper_dir(bot, user_data_dir) / "rounds"
+
+
+def request_new_round(bot: str, reason: str, user_data_dir: Path | None = None) -> None:
+    from datetime import UTC, datetime
+
+    p = round_marker(bot, user_data_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"reason": reason, "at": datetime.now(UTC).isoformat()}), encoding="utf-8")
+
+
+def archive_round(bot: str, user_data_dir: Path | None = None) -> int:
+    """Aktuelle Dry-Run-DB als abgeschlossene Runde ablegen; die nächste Runde startet wieder mit dem gleichen
+    Startkapital (dry_run_wallet). Abgelegte Runden bleiben Teil des KI-Gedächtnisses."""
+    marker = round_marker(bot, user_data_dir)
+    info = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else {}
+    rd = rounds_dir(bot, user_data_dir)
+    rd.mkdir(parents=True, exist_ok=True)
+    n = len(list(rd.glob("round-*.sqlite"))) + 1
+    db = paper_dir(bot, user_data_dir) / "tradesv3.dryrun.sqlite"
+    if db.exists():
+        db.rename(rd / f"round-{n:03d}.sqlite")
+    (rd / f"round-{n:03d}.json").write_text(json.dumps({"round": n, **info}), encoding="utf-8")
+    marker.unlink(missing_ok=True)
+    Registry(paths.REGISTRY_DB).log_source_event("paper", "new_round", "ok", {"bot": bot, "finished_round": n, **info})
+    return n
+
+
+def _pidfile(bot: str,user_data_dir: Path | None = None) -> Path:
     return paper_dir(bot, user_data_dir) / "bot.pid"
 
 
@@ -148,8 +203,13 @@ def start(bot: str, *, foreground: bool, user_data_dir: Path | None = None) -> i
                                                   "strategy_approval_id": cfg.get("kitb_strategy_approval_id"),
                                                   "foreground": foreground})
     if foreground:
-        return subprocess.call(cmd)
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        while True:
+            rc = subprocess.call(cmd)
+            # Runde zu Ende (Lern-/Sammler-Bot hat sein Verlustlimit erreicht): archivieren, frisch weiter.
+            if not round_marker(bot, user_data_dir).exists() or killswitch.is_active(user_data_dir):
+                return rc
+            archive_round(bot, user_data_dir)
+    proc =subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     pid_path.write_text(str(proc.pid))
     return 0
 

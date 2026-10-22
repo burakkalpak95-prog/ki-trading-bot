@@ -65,6 +65,20 @@ Die Übersicht (erster Reiter) zeigt in Alltagssprache: läuft der Bot, virtuell
 Gewinn/Verlust, was der Bot beim nächsten Tagesschluss vorhat, und die letzten Aktionen. Sie aktualisiert sich jede Minute.
 Voraussetzung: die Freigabe `kitb strategies approve --id trend_d1 --by NAME --reason ...` (einmalig).
 
+## Lernende Paper-Flotte (KI-Gedächtnis)
+
+17 Paper-Bots (KI-Bots A/B im Lernmodus, 7 Datensammler, 7 Datensammler mit KI-Filter, dazu trend_d1) und ein täglicher
+Lernlauf. Nur virtuelles Kapital (je Bot und Runde 10.000 USDT). Einmalig:
+
+```bash
+docker compose run --rm kitb strategies approve --id fleet --by "Burak" --reason "Lernende Flotte"
+docker compose run --rm kitb memory seed      # Startwissen aus historischen Backtests
+docker compose run --rm kitb memory daily     # erstes Training
+docker compose --profile paper-learn up -d    # Flotte + täglicher Lernlauf (Dienst ai-memory)
+```
+
+Danach im Dashboard: Reiter „Übersicht“ (alle Bots) und „Was hat die KI gelernt?“.
+
 ## Schnellstart (Docker, empfohlen – auch unter Windows/WSL2)
 
 ```bash

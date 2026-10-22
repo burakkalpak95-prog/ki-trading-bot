@@ -28,8 +28,9 @@ Write-Host "Sicherheitspruefung ..."
 docker compose run --rm kitb check-safety
 if ($LASTEXITCODE -ne 0) { throw "Sicherheitspruefung fehlgeschlagen - es wird nichts gestartet." }
 
-Write-Host "Bot und Uebersicht werden gestartet ..."
-docker compose --profile paper-trend --profile dashboard up -d paper-trend-d1 dashboard
+Write-Host "Bots, KI-Gedaechtnis und Uebersicht werden gestartet ..."
+# Bots ohne Freigabe beenden sich sofort von selbst (kitb strategies approve ...).
+docker compose --profile paper-trend --profile paper-learn --profile dashboard up -d
 if ($LASTEXITCODE -ne 0) { throw "Start fehlgeschlagen." }
 
 $url = "http://127.0.0.1:8501"

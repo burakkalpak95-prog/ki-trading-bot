@@ -246,6 +246,37 @@ def cmd_dashboard(args) -> int:
     return subprocess.call(cmd)
 
 
+def cmd_memory(args) -> int:
+    """KI-Gedächtnis: seed (einmalig historische Trades), daily (sammeln + lernen + prüfen), loop (täglich), status."""
+    import time
+
+    from kitb import ai_memory
+
+    reg = Registry(paths.REGISTRY_DB)
+    if args.action == "seed":
+        n = ai_memory.seed_from_backtests(datadir=paths.DATA_DIR / args.source, data_source=args.source)
+        print(f"{n} historische Trades ins KI-Gedächtnis gelegt.")
+        return 0
+    if args.action == "status":
+        prog = ai_memory.learning_progress(reg)
+        _print({k: v for k, v in prog.items() if k != "versions"} | {"versions": len(prog["versions"])})
+        return 0
+    while True:
+        try:
+            res = ai_memory.daily(registry=reg, fetch=ai_memory.fetch_public)
+            _print({k: v for k, v in res.items() if k != "importances"})
+        except Exception as e:  # noqa: BLE001 – im Dauerbetrieb protokollieren und morgen erneut versuchen
+            reg.log_source_event("ai_memory", "daily", "error", {"error": str(e)[:500]})
+            print(f"KI-Gedächtnis: Fehler {e}", file=sys.stderr)
+            if args.action == "daily":
+                return 1
+        if args.action == "daily":
+            return 0
+        now = pd.Timestamp.now(tz="UTC")
+        next_run = now.normalize() + pd.Timedelta(days=1, minutes=30)  # kurz nach Tagesschluss
+        time.sleep(max(60.0, (next_run - now).total_seconds()))
+
+
 def cmd_killswitch(args) -> int:
     from kitb import killswitch
 
@@ -264,14 +295,22 @@ def cmd_strategies(args) -> int:
     from kitb.models import GovernanceError
 
     reg = Registry(paths.REGISTRY_DB)
-    ids = list(load_project_config().get("paper_strategies", {}))
+    project = load_project_config()
+    ids = list(project.get("paper_strategies", {})) + list(project["bots"])
     try:
+        # "fleet" = alle Datensammler (mode explore) + KI-Bots im Lernmodus in einem Schritt.
+        targets = ([i for i, v in project.get("paper_strategies", {}).items() if v.get("mode") == "explore"]
+                   + list(project["bots"])) if args.id == "fleet" else [args.id]
         if args.action == "approve":
-            print(f"Freigabe #{strategy_approval.approve(reg, args.id, by=args.by, reason=args.reason)} für {args.id}.")
+            for t in targets:
+                print(f"Freigabe #{strategy_approval.approve(reg, t, by=args.by, reason=args.reason)} für {t}.")
         elif args.action == "revoke":
-            print(f"Freigabe für {args.id} zurückgezogen (#{strategy_approval.revoke(reg, args.id, by=args.by, reason=args.reason)}).")
+            for t in targets:
+                print(f"Freigabe für {t} zurückgezogen (#{strategy_approval.revoke(reg, t, by=args.by, reason=args.reason)}).")
         else:
-            _print([{"id": i, **load_project_config()["paper_strategies"][i],
+            specs = {**project["bots"], **project.get("paper_strategies", {})}
+            _print([{"id": i, "strategy": specs[i]["strategy"], "description": specs[i]["description"],
+                     "mode": "Lernmodus (KI)" if i in project["bots"] else "Regel-Strategie",
                      "approval": strategy_approval.current(reg, i)} for i in ids])
     except GovernanceError as e:
         print(f"Abgelehnt: {e}", file=sys.stderr)
@@ -298,7 +337,14 @@ def cmd_paper(args) -> int:
             return 0
         rc = 0
         for bot in bots:
-            rc |= paper.start(bot, foreground=args.action == "run")
+            try:
+                rc |= paper.start(bot, foreground=args.action == "run")
+            except SafetyError as e:
+                # Fehlende Freigabe: sauber beenden (Exit 0), damit Docker nicht endlos neu startet.
+                print(f"{bot}: nicht gestartet – {e}", file=sys.stderr)
+                if args.action == "start" or len(bots) > 1:
+                    rc |= 2
+                continue
             if args.action == "start":
                 print(f"{bot}: Paper-Trading gestartet (Dry-Run, virtuelles Kapital).")
         return rc
@@ -433,12 +479,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--bot", default="all", help="bot_a, bot_b, eine Paper-Strategie (z. B. trend_d1) oder all")
     s.set_defaults(func=cmd_paper)
 
-    s = sub.add_parser("strategies", help="Regel-Strategien für Paper-Trading: list/approve/revoke (nur Menschen)")
+    s = sub.add_parser("strategies", help="Paper-Freigaben (Regel-Strategien, Datensammler, KI-Lernmodus): list/approve/revoke (nur Menschen)")
     s.add_argument("action", choices=["list", "approve", "revoke"])
-    s.add_argument("--id", help="Paper-Strategie aus config/project.json → paper_strategies, z. B. trend_d1")
+    s.add_argument("--id", help="z. B. trend_d1, bot_a (Lernmodus) oder fleet (alle Datensammler + KI-Lernmodus)")
     s.add_argument("--by", help="Name der freigebenden Person (Pflicht für approve/revoke)")
     s.add_argument("--reason", default="")
     s.set_defaults(func=cmd_strategies)
+
+    s = sub.add_parser("memory", help="KI-Gedächtnis: seed | daily | loop | status (nur Paper-Daten, kein Handel)")
+    s.add_argument("action", choices=["seed", "daily", "loop", "status"])
+    s.add_argument("--source", default="binance")
+    s.set_defaults(func=cmd_memory)
 
     s = sub.add_parser("live", help="Live-Trading ist GESPERRT. Nur: readiness (Checkliste), confirm-risk")
     s.add_argument("action", choices=["readiness", "confirm-risk"])

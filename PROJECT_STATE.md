@@ -154,6 +154,12 @@ beide über der SMA200 schließen – das entspricht der Backtest-Logik (Einstie
 Einsatzhöhe: vermutlich 2 % Risiko / 10 % Stoploss = 20 % von 9.900 USDT handelbarem Kapital (Unsicher, nicht nachgerechnet).
 Nächste Entscheidung des Bots jeweils nach Tagesschluss 00:00 UTC. PC und Docker Desktop müssen dafür laufen.
 
+**Lernende Paper-Flotte (22.10.2026, ADR-016, Freigabe Burak):** KI-Bots A/B im Lernmodus (tägliches Neutraining),
+7 Datensammler-Strategien + 7 Kopien mit KI-Filter, KI-Gedächtnis mit täglichem Lernlauf und Seite „Was hat die KI
+gelernt?“. Lern-/Sammler-Bots beginnen bei Verlustlimit eine neue Runde mit 10.000 USDT statt den globalen Not-Stopp
+auszulösen. Ob die KI dadurch besser wird, ist offen (Weiß ich nicht) – die Seite misst es auf ungesehenen Trades.
+Tests (Cloud-venv): 184 bestanden.
+
 ## Erreichte Datenquellen (22.10.2026)
 
 | Quelle | Ergebnis |

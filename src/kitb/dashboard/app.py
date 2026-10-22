@@ -25,7 +25,7 @@ ks = status["kill_switch"]
 if ks:
     st.error(f"NOT-STOPP AKTIV seit {ks.get('activated_at')} – Grund: {ks.get('reason')} (durch {ks.get('by')})")
 
-overview_tab, *tabs = st.tabs(["Übersicht", "Status", "Kurse & Signale", "Paper-Trading", "Bot A vs. Bot B",
+overview_tab, learned_tab, *tabs = st.tabs(["Übersicht", "Was hat die KI gelernt?", "Status", "Kurse & Signale", "Paper-Trading", "Bot A vs. Bot B",
                                "Strategien", "Entscheidungen", "Modelle", "Datenqualität", "Fehler", "Not-Stopp"])
 
 
@@ -37,6 +37,15 @@ def _daily(exchange_id: str, pair: str) -> pd.DataFrame:
 @st.fragment(run_every=60)
 def simple_overview() -> None:
     """Einfache Ansicht für den Alltag: läuft der Bot, was hält er, was hat er vor. Aktualisiert sich jede Minute."""
+    ft0 = load_freqtrade_config()
+    fleet = D.fleet_table(ft0["dry_run_wallet"])
+    if len(fleet) > 1:
+        st.subheader("Alle Bots")
+        st.dataframe(fleet, hide_index=True, width="stretch",
+                     column_config={"Ergebnis Runde (%)": st.column_config.NumberColumn(format="percent")})
+        st.caption("Datensammler mit und ohne KI-Filter handeln dieselbe Strategie – der Vergleich zeigt, ob der "
+                   "KI-Filter hilft. Startkapital je Bot und Runde: 10.000 USDT (virtuell).")
+        st.subheader("Einzelner Bot")
     ids = list(project.get("paper_strategies", {})) + list(project["bots"])
     started = [b for b in ids if D.ever_started(b)]  # nur Bots zeigen, die schon einmal gelaufen sind
     ids = started or ids
@@ -116,6 +125,49 @@ def simple_overview() -> None:
 
 with overview_tab:
     simple_overview()
+
+
+@st.fragment(run_every=300)
+def learned_page() -> None:
+    from kitb import ai_memory, paths
+    from kitb.registry import Registry
+
+    prog = ai_memory.learning_progress(Registry(paths.REGISTRY_DB))
+    if prog["first"] is None:
+        st.info("Die KI hat noch nicht trainiert. Das passiert einmal täglich kurz nach Tagesschluss, sobald das "
+                f"Gedächtnis mindestens {ai_memory.MIN_TRADES_TO_TRAIN} abgeschlossene Trades enthält.")
+        return
+    last = prog["last"]
+    st.markdown(f"### {prog['verdict']}")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Dazugelernt seit Version 1", f"{prog['learned_pct']:+.1f} %-Punkte",
+              help="Trefferquote auf ungesehenen Trades: heute minus erste Version.")
+    c2.metric("Trefferquote heute", f"{last['accuracy']:.1%}",
+              f"{prog['edge_last']:+.1f} Punkte ggü. Raten", delta_color="normal")
+    c3.metric("Filter-Vorteil je Trade", "–" if prog["filter_gain_pct"] is None else f"{prog['filter_gain_pct']:+.2f} %",
+              help="Durchschnittlicher Gewinn der Trades, die die KI erlaubt hätte, minus Durchschnitt aller Trades.")
+    c4.metric("Gedächtnis", f"{int(last['Trades im Gedächtnis'])} Trades",
+              f"davon {int(last['paper_trades'])} aus dem Paper-Trading", delta_color="off")
+    v = prog["versions"].set_index("Datum")
+    st.subheader("Verlauf")
+    st.line_chart(v[["accuracy", "naive_accuracy"]].rename(columns={"accuracy": "KI", "naive_accuracy": "Raten"}))
+    st.subheader("Worauf die KI achtet")
+    imp = {ai_memory.FEATURE_TEXT.get(k, k): v for k, v in prog["importances"].items() if v > 0}
+    if imp:
+        total = sum(imp.values())
+        for name, val in list(imp.items())[:6]:
+            st.write(f"**{name}** – {val / total:.0%} des Einflusses")
+    else:
+        st.write("Noch kein Merkmal mit messbarem Einfluss.")
+    st.caption("Gemessen wird immer auf den jüngsten 20 % der Trades, die die KI beim Prüftraining nicht gesehen hat. "
+               "„Raten“ = immer das häufigere Ergebnis vorhersagen. Der Prüfzeitraum verschiebt sich mit jedem Tag; "
+               "einzelne Ausschläge sind normal. Aussagekräftig ist der Trend über Wochen.")
+    with st.expander("Alle Versionen"):
+        st.dataframe(prog["versions"], hide_index=True, width="stretch")
+
+
+with learned_tab:
+    learned_page()
 
 with tabs[0]:
     c1, c2, c3, c4 = st.columns(4)

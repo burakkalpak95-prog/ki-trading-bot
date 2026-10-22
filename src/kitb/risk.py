@@ -5,7 +5,8 @@ jede Strategie eingebunden (Freqtrade-Callbacks ``custom_stake_amount`` und ``co
 Damit gelten dieselben Limits im Backtest und im Paper-Trading.
 
 Bei Überschreitung des maximalen Drawdowns löst das Modul im Paper-/Live-Modus den Not-Stopp aus
-(dauerhaft, zurücksetzen nur durch einen Menschen). Im Backtest würde ein dauerhafter Stopp alle
+(dauerhaft, zurücksetzen nur durch einen Menschen). Ausnahme (Freigabe Burak, 22.10.2026): Paper-Bots im
+Modus ``learning``/``explore`` beenden nur ihre eigene Runde und starten mit frischem virtuellem Kapital neu. Im Backtest würde ein dauerhafter Stopp alle
 späteren Zeitfenster entwerten; dort wird stattdessen der Zeitpunkt ausgewiesen, an dem die
 Abschaltung ausgelöst hätte (``risk_halt_would_trigger_at``).
 """
@@ -128,6 +129,12 @@ def write_state(bot: str, payload: dict[str, Any], user_data_dir: Path | None = 
     p.write_text(json.dumps(current, indent=2, default=str), encoding="utf-8")
 
 
+def _refill_enabled() -> bool:
+    from kitb.config import load_project_config
+
+    return bool(load_project_config().get("paper_learning", {}).get("refill_on_drawdown"))
+
+
 class RiskManagedMixin:
     """In Freqtrade-Strategien einbinden: ``class S(RiskManagedMixin, IStrategy)``."""
 
@@ -137,6 +144,15 @@ class RiskManagedMixin:
         if self._risk is None:
             self._risk = RiskManager(RiskLimits.load())
         return self._risk
+
+    def _request_new_round(self, state: "AccountState") -> None:
+        """Nur Lern-/Sammler-Bots: Runde beenden; ``kitb paper run`` archiviert sie und startet mit frischem Kapital."""
+        from kitb import paper
+
+        bot = self.config.get("bot_name", "bot")
+        paper.request_new_round(bot, f"Max. Drawdown {state.drawdown:.1%} erreicht")
+        log.warning("%s: Verlustlimit erreicht – Runde endet, Neustart mit frischem virtuellem Kapital.", bot)
+        os.kill(os.getpid(), signal.SIGTERM)
 
     def _is_live_like(self) -> bool:
         runmode = getattr(getattr(self, "dp", None), "runmode", None)
@@ -194,10 +210,28 @@ class RiskManagedMixin:
                 "equity": round(state.equity, 2), "drawdown": round(state.drawdown, 4),
                 "today_realized_pnl": round(state.today_realized_pnl, 2), "open_positions": state.open_positions,
                 "last_decision": {"pair": pair, "allowed": decision.allowed, "reasons": decision.reasons}})
-            if "max_drawdown" in decision.reasons and not killswitch.is_active():
-                killswitch.activate(f"Max. Drawdown {state.drawdown:.1%} erreicht", "risk-module")
+            if "max_drawdown" in decision.reasons:
+                if self.config.get("kitb_mode") in ("learning", "explore") and _refill_enabled():
+                    # Freigabe Burak (22.10.2026): Lern-/Sammler-Bots stoppen nur sich selbst; die Runde wird
+                    # archiviert und mit frischem virtuellem Kapital neu begonnen (kitb.paper.archive_round).
+                    self._request_new_round(state)
+                elif not killswitch.is_active():
+                    killswitch.activate(f"Max. Drawdown {state.drawdown:.1%} erreicht", "risk-module")
         if not decision.allowed:
             log.info("Risikomodul blockiert %s: %s", pair, decision.reasons)
+            return False
+        if self._is_live_like() and self.config.get("kitb_ai_filter"):
+            # KI-Filter darf nur zusätzlich ablehnen, nie ein Risikolimit aufheben.
+            from kitb import ai_memory
+
+            try:
+                ok, p = ai_memory.allow_entry(strategy=type(self).__name__, pair=pair, when=current_time)
+            except Exception as e:  # noqa: BLE001 – Filterfehler darf den Bot nicht stoppen
+                log.warning("KI-Filter nicht verfügbar (%s) – Trade ohne Filter.", e)
+                ok, p = True, None
+            log.info("KI-Filter %s: Gewinnchance %s -> %s", pair, "?" if p is None else f"{p:.0%}",
+                     "erlaubt" if ok else "ausgelassen")
+            return ok
         return decision.allowed
 
     def bot_loop_start(self, current_time: datetime, **kwargs) -> None:

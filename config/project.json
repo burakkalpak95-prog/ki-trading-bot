@@ -133,7 +133,91 @@
     "paper_strategies": {
         "trend_d1": {
             "strategy": "DailyTrendSma",
-            "description": "Regel-Strategie: Tagesschluss über SMA 200 (bestand Vorperiode 2019–2021 und Test-Abschnitt)"
+            "description": "Regel-Strategie: Tagesschluss über SMA 200 (bestand Vorperiode 2019–2021 und Test-Abschnitt)",
+            "mode": "candidate"
+        },
+        "ema_cross_1h": {
+            "strategy": "BaselineEmaCross",
+            "description": "Datensammler: Trendfolge, EMA-Kreuzung (Baseline), 1h",
+            "mode": "explore"
+        },
+        "trend_adx_1h": {
+            "strategy": "TrendEmaAdx",
+            "description": "Datensammler: Trendfolge mit Trendstärke-Filter (ADX), 1h",
+            "mode": "explore"
+        },
+        "macd_rsi_1h": {
+            "strategy": "MomentumMacdRsi",
+            "description": "Datensammler: Momentum, MACD + RSI, 1h",
+            "mode": "explore"
+        },
+        "bollinger_1h": {
+            "strategy": "MeanReversionBollinger",
+            "description": "Datensammler: Rückkehr zum Mittelwert, Bollinger-Bänder, 1h",
+            "mode": "explore"
+        },
+        "donchian_1h": {
+            "strategy": "BreakoutDonchian",
+            "description": "Datensammler: Ausbruch, Donchian-Kanal, 1h",
+            "mode": "explore"
+        },
+        "squeeze_1h": {
+            "strategy": "VolatilitySqueeze",
+            "description": "Datensammler: Volatilitäts-Ausbruch (Squeeze), 1h",
+            "mode": "explore"
+        },
+        "momentum_d1": {
+            "strategy": "DailyMomentum",
+            "description": "Datensammler: Momentum 90 Tage, Tageskerzen (im Test durchgefallen, kein Kandidat)",
+            "mode": "explore"
+        },
+        "ema_cross_1h_ki": {
+            "strategy": "BaselineEmaCross",
+            "description": "Wie ema_cross_1h, aber mit KI-Filter (lässt Trades mit geringer Gewinnchance aus)",
+            "mode": "explore",
+            "ai_filter": true
+        },
+        "trend_adx_1h_ki": {
+            "strategy": "TrendEmaAdx",
+            "description": "Wie trend_adx_1h, aber mit KI-Filter",
+            "mode": "explore",
+            "ai_filter": true
+        },
+        "macd_rsi_1h_ki": {
+            "strategy": "MomentumMacdRsi",
+            "description": "Wie macd_rsi_1h, aber mit KI-Filter",
+            "mode": "explore",
+            "ai_filter": true
+        },
+        "bollinger_1h_ki": {
+            "strategy": "MeanReversionBollinger",
+            "description": "Wie bollinger_1h, aber mit KI-Filter",
+            "mode": "explore",
+            "ai_filter": true
+        },
+        "donchian_1h_ki": {
+            "strategy": "BreakoutDonchian",
+            "description": "Wie donchian_1h, aber mit KI-Filter",
+            "mode": "explore",
+            "ai_filter": true
+        },
+        "squeeze_1h_ki": {
+            "strategy": "VolatilitySqueeze",
+            "description": "Wie squeeze_1h, aber mit KI-Filter",
+            "mode": "explore",
+            "ai_filter": true
+        },
+        "momentum_d1_ki": {
+            "strategy": "DailyMomentum",
+            "description": "Wie momentum_d1, aber mit KI-Filter",
+            "mode": "explore",
+            "ai_filter": true
         }
+    },
+    "paper_learning": {
+        "$comment": "Lernmodus der KI-Bots und Datensammler im Paper-Trading (Freigabe Burak, 22.10.2026). Nur virtuelles Kapital.",
+        "retrain_hours": 24,
+        "refill_on_drawdown": true,
+        "apply_ai_filter": true
     }
 }

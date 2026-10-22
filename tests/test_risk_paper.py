@@ -201,7 +201,41 @@ def test_rule_strategy_paper_requires_human_approval(reg, tmp_path):
 
 
 def test_paper_ids_include_rule_strategies():
-    assert paper.paper_ids() == ["bot_a", "bot_b", "trend_d1"]
+    ids = paper.paper_ids()
+    assert ids[:3] == ["bot_a", "bot_b", "trend_d1"] and "donchian_1h" in ids and 10 <= len(ids) <= 20
+
+
+def test_learning_mode_needs_human_approval_and_retrains_daily(reg, tmp_path):
+    from kitb import strategy_approval
+
+    with pytest.raises(SafetyError):
+        paper.build_paper_config("bot_a", reg, tmp_path / "ud")
+    strategy_approval.approve(reg, "bot_a", by="Burak", reason="Lernmodus")
+    _, cfg = paper.build_paper_config("bot_a", reg, tmp_path / "ud")
+    assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True
+    assert cfg["freqai"]["live_retrain_hours"] == 24 and cfg["freqai"]["identifier"] == "paper-learn-bot_a"
+    assert not cfg["exchange"].get("key")
+
+
+def test_explore_bots_are_marked_and_candidate_stays_candidate(reg, tmp_path):
+    from kitb import strategy_approval
+
+    for i in ("trend_d1", "donchian_1h"):
+        strategy_approval.approve(reg, i, by="Burak", reason="Test")
+    assert paper.build_paper_config("trend_d1", reg, tmp_path / "ud")[1]["kitb_mode"] == "candidate"
+    assert paper.build_paper_config("donchian_1h", reg, tmp_path / "ud")[1]["kitb_mode"] == "explore"
+
+
+def test_new_round_archives_db_and_keeps_history(tmp_path, monkeypatch):
+    ud = tmp_path / "ud"
+    monkeypatch.setattr(paths, "REGISTRY_DB", tmp_path / "r.sqlite")
+    db = paper.paper_dir("donchian_1h", ud) / "tradesv3.dryrun.sqlite"
+    db.parent.mkdir(parents=True)
+    db.write_text("x")
+    paper.request_new_round("donchian_1h", "Max. Drawdown 15.2% erreicht", ud)
+    assert paper.archive_round("donchian_1h", ud) == 1
+    assert not db.exists() and not paper.round_marker("donchian_1h", ud).exists()
+    assert (paper.rounds_dir("donchian_1h", ud) / "round-001.sqlite").exists()
 
 
 def test_paper_status_detects_bot_in_other_container_via_log(tmp_path):
