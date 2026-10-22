@@ -226,6 +226,15 @@ def cmd_decisions(args) -> int:
     return 0
 
 
+def cmd_agents_evaluate(args) -> int:
+    from kitb.agents.evaluate import evaluate_agents
+
+    datadir = paths.SYNTHETIC_DATA_DIR if args.source == "synthetic" else paths.DATA_DIR / args.source
+    _print(evaluate_agents(datadir=datadir, data_source=args.source, offline=args.offline_markets,
+                           registry=Registry(paths.REGISTRY_DB)))
+    return 0
+
+
 def cmd_runs(args) -> int:
     _print(Registry(paths.REGISTRY_DB).fetch(args.table, args.limit))
     return 0
@@ -313,6 +322,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--bot")
     s.add_argument("--limit", type=int, default=20)
     s.set_defaults(func=cmd_decisions)
+
+    s = sub.add_parser("agents-evaluate", help="Nutzen der Analyse-Agenten belegen oder widerlegen")
+    s.add_argument("--source", default="binance")
+    s.add_argument("--offline-markets", action="store_true")
+    s.set_defaults(func=cmd_agents_evaluate)
 
     s = sub.add_parser("runs", help="Protokoll anzeigen")
     s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs", "decisions",

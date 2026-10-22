@@ -110,5 +110,19 @@
                 "class_weight": "balanced"
             }
         }
+    },
+    "agents": {
+        "enabled": false,
+        "$comment": "Agenten werden nur eingesetzt, wenn 'kitb agents-evaluate' den Nutzen belegt UND ein Mensch enabled=true setzt.",
+        "pairs_to_evaluate": {
+            "AgentGatedBaseline": "BaselineEmaCross",
+            "AgentGatedBreakout": "BreakoutDonchian"
+        },
+        "benefit_criteria": {
+            "min_profit_improvement": 0.0,
+            "max_drawdown_not_worse": true,
+            "min_share_windows_better": 0.6,
+            "min_trades_kept_ratio": 0.3
+        }
     }
 }
