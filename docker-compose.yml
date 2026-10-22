@@ -1,0 +1,18 @@
+# Phase 1: nur Datenabruf und Backtests. Kein Trading-Dienst, KEINE Ports nach außen.
+# Beispiele:
+#   docker compose build
+#   docker compose run --rm kitb check-safety
+#   docker compose run --rm kitb download --exchange binance --timerange 20220101-
+#   docker compose run --rm kitb backtest --source binance
+#   docker compose run --rm --entrypoint pytest kitb -q
+services:
+  kitb:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: kitb:phase1
+    volumes:
+      - ./config:/kitb/config:ro
+      - ./user_data:/kitb/user_data
+      - ./tests:/kitb/tests:ro
+      - ./pyproject.toml:/kitb/pyproject.toml:ro

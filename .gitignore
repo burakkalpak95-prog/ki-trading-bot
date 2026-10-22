@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+# Marktdaten, Ergebnisse, lokale DB: nicht ins Git
+user_data/data/
+user_data/backtest_results/
+user_data/logs/
+user_data/*.sqlite
+user_data/*.sqlite-*
+# Secrets
+.env
+*.secret.json
+config/*.local.json

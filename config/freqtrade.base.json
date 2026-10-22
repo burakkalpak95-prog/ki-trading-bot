@@ -1,0 +1,32 @@
+{
+    "$comment": "Phase 1: nur Datenabruf und Backtesting. dry_run MUSS true bleiben. Keine API-Keys hier eintragen.",
+    "bot_name": "kitb-phase1",
+    "dry_run": true,
+    "dry_run_wallet": 10000,
+    "trading_mode": "spot",
+    "margin_mode": "",
+    "initial_state": "stopped",
+    "force_entry_enable": false,
+    "max_open_trades": 2,
+    "stake_currency": "USDT",
+    "stake_amount": 4000,
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "",
+    "timeframe": "1h",
+    "dataformat_ohlcv": "parquet",
+    "unfilledtimeout": {"entry": 10, "exit": 10, "unit": "minutes"},
+    "entry_pricing": {"price_side": "other", "use_order_book": false, "price_last_balance": 0.0},
+    "exit_pricing": {"price_side": "other", "use_order_book": false},
+    "exchange": {
+        "name": "binance",
+        "key": "",
+        "secret": "",
+        "ccxt_config": {"enableRateLimit": true},
+        "ccxt_async_config": {"enableRateLimit": true},
+        "pair_whitelist": ["BTC/USDT", "ETH/USDT"],
+        "pair_blacklist": []
+    },
+    "pairlists": [{"method": "StaticPairList"}],
+    "telegram": {"enabled": false, "token": "", "chat_id": ""},
+    "internals": {"process_throttle_secs": 5}
+}

@@ -1,0 +1,16 @@
+{
+    "$comment": "Projektweite Phase-1-Einstellungen (nicht Freqtrade). Kosten je Order-Seite als Anteil (0.001 = 0,1 %).",
+    "allowed_exchanges": ["binance", "okx", "kraken"],
+    "allowed_pairs": ["BTC/USDT", "ETH/USDT"],
+    "timeframes": ["1h", "1d"],
+    "costs": {
+        "fee_per_side": 0.001,
+        "slippage_per_side": 0.0005,
+        "half_spread_per_side": 0.0002
+    },
+    "validation": {
+        "max_abs_log_return": {"1m": 0.15, "5m": 0.2, "15m": 0.25, "1h": 0.3, "4h": 0.4, "1d": 0.6},
+        "max_staleness_candles": 3
+    },
+    "network": {"retries": 4, "backoff_base_seconds": 2.0, "timeout_ms": 15000}
+}

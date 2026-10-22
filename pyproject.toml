@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kitb"
+version = "0.1.0"
+description = "KI-Trading-Bot – Phase 1: Daten, Validierung, Speicherung, Backtest-Baseline (auf Basis von Freqtrade)"
+requires-python = ">=3.11"
+# Freqtrade bringt pandas, numpy, ccxt, pyarrow, ta-lib, sqlalchemy mit.
+# Version identisch zum Docker-Image freqtradeorg/freqtrade:2026.9 halten.
+dependencies = [
+    "freqtrade==2026.9",
+    "ccxt==4.5.84",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[project.scripts]
+kitb = "kitb.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: braucht Internetzugang zu einer Börse (standardmäßig übersprungen)",
+]
+addopts = "-m 'not network'"
