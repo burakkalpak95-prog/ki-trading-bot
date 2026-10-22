@@ -1,34 +1,38 @@
 # Architektur und Entscheidungen
 
-## Komponenten und Schnittstellen (Zielbild, Phase 1 fett)
+## Komponenten und Schnittstellen (Stand Phase 8)
 
 | # | Komponente | Phase | Umsetzung / Schnittstelle |
 |---|---|---|---|
-| 1 | **Market Data Layer** | 1 | `freqtrade download-data` (CCXT, Rate-Limit + Retries von Freqtrade); `kitb probe` prüft öffentliche Ticker/Kerzen mit eigenem Backoff |
-| 2 | **Data Validation Layer** | 1 | `kitb.data.validate.validate_ohlcv(df, pair, timeframe, source, now=…) -> ValidationReport` |
-| 3 | **Historical Data Storage** | 1 | Parquet über Freqtrade-Datahandler (`kitb.data.storage`), Protokoll in SQLite (`kitb.registry.Registry`) |
-| 4 | Feature Engineering | 2/3 | Freqtrade-Strategien (`populate_indicators`) bzw. FreqAI-Features |
-| 5 | Strategy Engine | 1 (Baseline) / 2 | Freqtrade `IStrategy`; Baseline `BaselineEmaCross` |
-| 6 | Machine Learning Layer | 3 | geplant: FreqAI (Bot A: einfache Modelle, Bot B: erweitert) |
-| 7 | Decision Logging | 4 | geplant |
-| 8 | Learning & Evaluation | 4 | geplant |
-| 9 | **Backtesting Engine** | 1 | Freqtrade-Backtesting, gekapselt in `kitb.backtest.run_backtest()` |
-| 10 | Paper-Trading Engine | 7 | geplant: Freqtrade dry-run – **in Phase 1 gesperrt** |
-| 11 | Risk Management | 2+ | geplant; Phase 1 nur Konfigurationssperren (`kitb.safety`) |
-| 12 | Multi-Agent Coordination | 5 | nur bei nachgewiesenem Nutzen |
-| 13 | Monitoring & Dashboard | 6 | geplant (OpenTerminal prüfen, sonst schlanke Alternative) |
-| 14 | Live-Trading-Adapter | 8 | nicht implementiert; nur nach separater Freigabe |
+| 1 | Market Data Layer | 1 | `freqtrade download-data` (CCXT, Rate-Limit + Retries von Freqtrade); `kitb probe` mit eigenem Backoff |
+| 2 | Data Validation Layer | 1 | `kitb.data.validate.validate_ohlcv(...) -> ValidationReport` (15 Prüfungen) |
+| 3 | Historical Data Storage | 1 | Parquet über Freqtrade-Datahandler, Protokoll in SQLite (`kitb.registry.Registry`) |
+| 4 | Feature Engineering | 2/3 | `kitb.indicators` (kausal); FreqAI-Features in `BotAEfficient` / `BotBExtended` |
+| 5 | Strategy Engine | 2 | Freqtrade `IStrategy`: 6 Regel-Strategien, alle mit `RiskManagedMixin` |
+| 6 | Machine Learning Layer | 3 | FreqAI Walk-Forward; Bot A `KitbLogisticRegression`, Bot B `KitbLightGBMClassifier` |
+| 7 | Decision Logging | 4 | `kitb.decisions` (Backtest: Freqtrade-Signal-Export; Paper: `confirm_trade_entry/exit`), Feature-Einfluss über `kitb.explain` |
+| 8 | Learning & Evaluation | 4 | `kitb.models` (Register, Kriterien, Freigabe, Rollback), `kitb.drift`, `kitb train-cycle` |
+| 9 | Backtesting Engine | 1/2 | `kitb.backtest.run_freqtrade_backtest()`, `kitb.compare`, `kitb.evaluation` |
+| 10 | Paper-Trading Engine | 7 | `kitb.paper` startet Freqtrade-Dry-Run je Bot (eigene SQLite-DB) |
+| 11 | Risk Management | 7 | `kitb.risk.RiskManager` + `RiskManagedMixin`, Limits in `config/risk.json`; Not-Stopp `kitb.killswitch` |
+| 12 | Multi-Agent Coordination | 5 | `kitb.agents` (azyklisch, nur Veto), **standardmäßig aus** – kein belegter Nutzen |
+| 13 | Monitoring & Dashboard | 6 | Streamlit (`kitb dashboard`, nur 127.0.0.1) |
+| 14 | Live-Trading-Adapter | 8 | `kitb.live.LockedLiveAdapter` – lehnt jede Aktion ab |
 
-Datenfluss Phase 1:
+Datenfluss:
 
 ```
-Börse (öffentlich) --freqtrade download-data--> Parquet --validate--> SQLite (validation_reports)
-                                                   |
-synthetic (offline, gekennzeichnet) ---------------+
-                                                   v
-                       kitb backtest: Safety-Check -> Validierung (Abbruch bei ERROR)
-                       -> Freqtrade-Backtest (--fee = Gebühr+Slippage+½Spread)
-                       -> Kennzahlen + Buy&Hold -> user_data/backtest_results/*.zip + SQLite (backtest_runs)
+Börse (öffentlich) --download-data--> Parquet --validate--> SQLite
+                                         |
+                                         v
+  compare / ml-compare / train-cycle: Safety-Check -> Validierung -> chronologischer Split (Train/Val, Test gesperrt)
+     -> Freqtrade-Backtest bzw. FreqAI Walk-Forward (--fee = Gebühr+Slippage+½Spread, RiskManagedMixin)
+     -> Kennzahlen, Buy&Hold, Marktphasen, Fenster -> Bericht (user_data/reports) + SQLite
+     -> Modellkandidat -> Kriterien geprüft -> [Mensch: approve/activate] -> aktive Version
+                                                                              |
+  paper start: Safety-Check (Modus paper) -> Freqtrade dry-run je Bot <-------+
+     -> Entscheidungen + Trades (SQLite je Bot) -> Dashboard / paper report / drift
+  Not-Stopp-Datei -> Bots stoppen sich selbst (bot_loop_start), neue Einstiege werden abgelehnt
 ```
 
 ## ADR-001: Freqtrade als Kern statt Eigenentwicklung
@@ -45,7 +49,8 @@ synthetic (offline, gekennzeichnet) ---------------+
 
 - Freqtrade-Doku (Installationsseite, Stand `stable`): Windows-Nutzern wird **„strongly recommended“ Docker**, alternativ WSL2;
   native Installation nur mit `setup.ps1` und ggf. Visual-C++-Build-Tools.
-- Entscheidung: `docker compose` mit gepinntem Image `freqtradeorg/freqtrade:2026.9` (Python 3.14.7, CCXT 4.5.84).
+- Entscheidung: `docker compose` mit gepinntem Image `freqtradeorg/freqtrade:2026.9` (Python 3.14.7, CCXT 4.5.84);
+  seit Phase 3 die Variante `2026.9_freqai` (gleiche Freqtrade-Version plus FreqAI-Abhängigkeiten).
   Lokale venvs nutzen `constraints.txt` (aus dem Image erzeugt) für identische Paketversionen.
 - GPU: in Phase 1 nicht benötigt. Für spätere Sequenzmodelle muss die CUDA-Unterstützung der RTX 5070 Ti in Docker/WSL2
   separat geprüft werden (Unsicher; erst in Phase 3 relevant).
@@ -76,3 +81,77 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - Jeder Backtest speichert SHA-256 der Daten je Paar, SHA-256 der Konfiguration, Kostenmodell und Freqtrade-Version.
 - Synthetische Daten sind seed-basiert deterministisch.
 - Geprüft: gleicher Backtest im venv (Python 3.13) und im Docker-Image (Python 3.14) lieferte identische Kennzahlen.
+
+## ADR-006: Faire Auswertung – chronologischer Split, gesperrter Test-Abschnitt, Marktphasen (Phase 2)
+
+- Daten werden chronologisch in Train 60 % / Validation 20 % / Test 20 % geteilt. Der Test-Abschnitt wird nur mit
+  `--include-test` ausgewertet, jede Nutzung wird protokolliert (Schutz vor unbewusstem Overfitting).
+- Zusätzlich rollierende 90-Tage-Fenster (Stabilität) und Marktphasen (Trend über SMA50 + Steigung, Volatilität über
+  expandierenden Median). Die Phase eines Tages gilt erst ab Schluss der Tageskerze (kein Blick in die Zukunft).
+- Ergebnisse mit < 30 Trades werden als „zu klein“ markiert.
+
+## ADR-007: KI-Bots über FreqAI statt eigener Trainingsschleife (Phase 3)
+
+- FreqAI liefert Walk-Forward-Training (90 Tage Training, Neutraining alle 30 Tage) innerhalb des Freqtrade-Backtests,
+  dadurch gelten für Bots und Regel-Strategien identische Kosten, Daten und Ausführungsannahmen.
+- Label: Rendite über 12 Kerzen > 0,6 %. Leck-Schutz: `shuffle=false`, Features nur aus vergangenen Kerzen.
+- Bot A: logistische Regression, wenige Features, nur 1h. Bot B: LightGBM, mehr Features, 1h + 1d, BTC/ETH-Korrelation.
+  Beide mit `class_weight=balanced` (ohne dies erreichte Bot A nie die Einstiegsschwelle und handelte nicht).
+- Ressourcen werden je Lauf gemessen (Laufzeit, CPU, Spitzen-RAM, Modellgröße).
+- GPU: nicht genutzt und nicht geprüft (Cloud ohne GPU). Bei den gemessenen Laufzeiten (Sekunden) ist sie für diese
+  Modelle nicht nötig. CUDA-Unterstützung der RTX 5070 Ti in Docker/WSL2: Weiß ich nicht.
+- Bekannter Freqtrade-Fehler: Schlägt ein Training fehl, bricht der Ersatzpfad für leere Vorhersagen ab
+  (DataFrame hat kein `.dtype`). Gegenmaßnahme: Prüfung auf ausreichende Vorlaufdaten (`min_history_days_before_backtest`).
+
+## ADR-008: Modell-Governance mit menschlicher Freigabe (Phase 4)
+
+- Lebenszyklus: candidate -> passed/failed (automatisch nach `config/release_criteria.json`) -> approved -> active -> retired.
+  `approve`, `activate` und `rollback` verlangen `--by <Name>`; fehlende Namen, bekannte automatische Akteure
+  und Namen, die mit „bot“, „agent“ oder „model“ beginnen, werden abgelehnt.
+- Kriterien u. a.: ≥ 30 Trades, Profit Factor ≥ 1,05, Drawdown ≤ 25 %, Gewinn > 0, p-Wert des mittleren Trade-Gewinns
+  ≤ 0,05 (t-Test aus Freqtrade), besser als Buy&Hold, Referenz-Strategie und aktive Version.
+  Der p-Wert wurde ergänzt, nachdem Bot A auf Zufallsdaten die übrigen Kriterien zufällig erfüllte.
+- Drift (PSI + KS-Test, Leistungsvergleich) **meldet nur**; kein automatisches Neutrainieren oder Umschalten.
+
+## ADR-009: Agenten nur als abschaltbares Veto (Phase 5)
+
+- Regelbasierte, lokale Agenten (Markt, Trend, Volatilität, Risiko) mit Koordinator; Abhängigkeiten werden topologisch
+  sortiert, Zyklen führen zum Abbruch. Agenten können Einstiege nur verhindern, nie auslösen.
+- `kitb agents-evaluate` vergleicht Strategien mit und ohne Agenten. Ergebnis auf synthetischen Daten: kein belegter
+  Nutzen -> `agents.enabled=false`. Einschalten nur durch einen Menschen, wenn die Auswertung auf echten Daten einen Nutzen zeigt.
+
+## ADR-010: Dashboard mit Streamlit; OpenTerminal verworfen (Phase 6)
+
+- Geprüft (PyPI, 22.10.2026): Das Paket `open-terminal` (0.14.2, MIT) ist ein Fernzugriffs-Terminal mit REST-API für
+  KI-Agenten, **kein Marktdaten-Terminal**. Es würde eine Shell über das Netzwerk freigeben – widerspricht der Regel
+  „keine unnötigen offenen Ports“. Verworfen.
+- Falls „OpenTerminal“ das OpenBB-Projekt meinte: `openbb` 5.0.0 (Apache-2.0) existiert auf PyPI, wurde aber nicht
+  installiert oder getestet (Unsicher, ob es gemeint war). Für die Anforderungen genügt eine schlanke Lösung.
+- Entscheidung: Streamlit 1.66.1 (Apache-2.0) + Plotly, liest nur Dateien/SQLite, bindet nur an 127.0.0.1, Telemetrie aus,
+  Streamlit-Werkzeugleiste minimal. FreqUI wurde nicht genutzt, weil sie den Freqtrade-API-Server voraussetzt.
+- Analysen und Tests funktionieren ohne Dashboard.
+
+## ADR-011: Zentrales Risikomodul und Not-Stopp (Phase 7)
+
+- `RiskManagedMixin` steckt in allen Strategien: Positionsgröße (max. 40 % je Position, 2 % Risiko je Trade bis zum
+  Stoploss), Gesamtexposure ≤ 80 %, max. 2 Positionen, Tagesverlust ≤ 3 %, Drawdown-Stopp bei 15 %, veraltete Daten,
+  Einsatz ≤ 1 % des 24h-Volumens. Hebel, Futures, Margin, Abhebungen: immer aus.
+- Im Backtest wird der Drawdown-Stopp nur gemeldet (`risk_halt_would_trigger_at`), sonst würde ein einmaliger Stopp
+  den Rest des Backtests verfälschen. Im Paper-Betrieb wird er durchgesetzt.
+- Not-Stopp: Datei `user_data/KILL_SWITCH`. Laufende Bots lehnen neue Einstiege ab und beenden sich; Zurücksetzen nur
+  durch einen Menschen (`kitb kill-switch off --by <Name>`).
+
+## ADR-012: Paper-Trading = Freqtrade-Dry-Run (Phase 7)
+
+- Je Bot ein eigener Dry-Run mit eigener SQLite-DB und virtuellem Kapital (10 000 USDT). Start nur mit aktiver,
+  freigegebener Modellversion; Sicherheitsprüfung im Modus `paper` (dry_run=true erzwungen, keine Keys).
+- Freqtrade simuliert Markt-Orders im Dry-Run anhand des Orderbuchs und rechnet die konfigurierte Gebühr (im Code von
+  Freqtrade 2026.9 nachgesehen). Kein API-Server, keine offenen Ports.
+
+## ADR-013: Live-Trading nur als gesperrte Schnittstelle (Phase 8)
+
+- `LiveTradingAdapter` (Protokoll) beschreibt die spätere Schnittstelle; einzige Implementierung `LockedLiveAdapter`
+  lehnt jede Aktion ab. `safety` lässt den Modus `live` nie zu.
+- `kitb live readiness` zeigt die Checkliste für eine spätere Freigabe (u. a. mind. 100 Paper-Trades, bestätigte
+  Risikolimits, Mindestordergrößen, unabhängige Prüfung). Eine Freischaltung erfordert Codeänderung + separate Freigabe.
+

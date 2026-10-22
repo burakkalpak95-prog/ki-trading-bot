@@ -286,5 +286,5 @@ def render_ml_markdown(report: dict[str, Any]) -> str:
         lines += ["", f"**Einordnung:** {v['statement']} Bot B − Bot A: {_pct(v['bot_b_minus_bot_a_profit'])}; "
                       f"Laufzeitfaktor Bot B/Bot A: {v['bot_b_cost_factor_wall_time']}×; "
                       f"beste Regel-Strategie: {v['best_reference']}.", ""]
-    lines.append("Hinweis: Kein Signifikanztest. Vergangene Ergebnisse garantieren keine zukünftigen Gewinne.")
+    lines.append("Hinweis: Der p-Wert (Kriterium max_mean_profit_pvalue) prüft nur, ob der mittlere Trade-Gewinn von 0 verschieden ist – kein Beleg für künftige Gewinne.")
     return "\n".join(lines) + "\n"

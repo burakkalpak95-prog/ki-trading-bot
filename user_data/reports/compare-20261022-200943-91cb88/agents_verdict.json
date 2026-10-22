@@ -1,0 +1,48 @@
+{
+  "compare_id": "20261022-200943-91cb88",
+  "synthetic_data": true,
+  "verdicts": {
+    "AgentGatedBaseline": {
+      "base": "BaselineEmaCross",
+      "checks": {
+        "profit_improved": false,
+        "drawdown_not_worse": true,
+        "windows_better": false,
+        "enough_trades_kept": true,
+        "sample_ok": false
+      },
+      "benefit_proven": false,
+      "validation_profit": {
+        "with_agents": -0.09263950197,
+        "without": -0.06355252120000002
+      },
+      "validation_drawdown": {
+        "with_agents": 0.09263950196999994,
+        "without": 0.09426981436331934
+      },
+      "share_windows_better": 0.333
+    },
+    "AgentGatedBreakout": {
+      "base": "BreakoutDonchian",
+      "checks": {
+        "profit_improved": false,
+        "drawdown_not_worse": false,
+        "windows_better": false,
+        "enough_trades_kept": true,
+        "sample_ok": false
+      },
+      "benefit_proven": false,
+      "validation_profit": {
+        "with_agents": -0.04856724636699999,
+        "without": 0.049657325281
+      },
+      "validation_drawdown": {
+        "with_agents": 0.05997816292798144,
+        "without": 0.0555370595428253
+      },
+      "share_windows_better": 0.167
+    }
+  },
+  "recommendation": "Kein belegter Nutzen \u2013 Agenten bleiben deaktiviert (einfachere Architektur).",
+  "report_dir": "/home/user/ki-trading-bot/user_data/reports/compare-20261022-200943-91cb88"
+}

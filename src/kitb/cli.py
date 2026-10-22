@@ -28,7 +28,7 @@ def cmd_check_safety(args) -> int:
     if problems:
         print("UNSICHER:\n- " + "\n- ".join(problems))
         return 1
-    print("OK: Konfiguration erfüllt die Phase-1-Sicherheitsregeln (nur Daten/Backtest, dry_run, Spot).")
+    print("OK: Konfiguration erfüllt die Sicherheitsregeln (dry_run, Spot, keine Keys, Live gesperrt).")
     return 0
 
 
@@ -241,7 +241,8 @@ def cmd_dashboard(args) -> int:
     app = Path(__file__).parent / "dashboard" / "app.py"
     # Nur lokal erreichbar (127.0.0.1), keine Telemetrie.
     cmd = [sys.executable, "-m", "streamlit", "run", str(app), "--server.address", args.address,
-           "--server.port", str(args.port), "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+           "--server.port", str(args.port), "--server.headless", "true", "--browser.gatherUsageStats", "false",
+           "--client.toolbarMode", "minimal"]
     return subprocess.call(cmd)
 
 
@@ -305,10 +306,10 @@ def cmd_runs(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="kitb", description="KI-Trading-Bot Phase 1 (Daten + Backtest)")
+    p = argparse.ArgumentParser(prog="kitb", description="KI-Trading-Bot (Daten, Backtests, KI-Bots, Paper-Trading; Live gesperrt)")
     sub = p.add_subparsers(dest="command", required=True)
 
-    s = sub.add_parser("check-safety", help="Konfiguration gegen Phase-1-Regeln prüfen")
+    s = sub.add_parser("check-safety", help="Konfiguration gegen die Sicherheitsregeln prüfen")
     s.add_argument("--config", type=Path, default=paths.FREQTRADE_BASE_CONFIG)
     s.set_defaults(func=cmd_check_safety)
 

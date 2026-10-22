@@ -16,7 +16,7 @@ SECRET_KEYS = ("key", "secret", "password", "uid", "walletAddress", "privateKey"
 
 
 class SafetyError(RuntimeError):
-    """Konfiguration oder Aufruf verletzt eine Phase-1-Sicherheitsregel."""
+    """Konfiguration oder Aufruf verletzt eine Sicherheitsregel."""
 
 
 def assert_run_mode_allowed(mode: str) -> None:
@@ -60,7 +60,7 @@ def check_freqtrade_config(
         problems.append(f"Börse '{exchange.get('name')}' ist nicht freigegeben.")
     for key in SECRET_KEYS:
         if exchange.get(key):
-            problems.append(f"exchange.{key} ist gesetzt – in Phase 1 keine Zugangsdaten.")
+            problems.append(f"exchange.{key} ist gesetzt – keine Zugangsdaten erlaubt (Live gesperrt).")
     pairs = set(exchange.get("pair_whitelist", []))
     not_allowed = pairs - set(allowed_pairs)
     if not_allowed:
@@ -70,7 +70,7 @@ def check_freqtrade_config(
         problems.append("Telegram muss deaktiviert sein.")
     api = config.get("api_server", {})
     if api.get("enabled"):
-        problems.append("api_server muss in Phase 1 deaktiviert sein.")
+        problems.append("api_server muss deaktiviert sein.")
     if api.get("listen_ip_address", "127.0.0.1") not in ("127.0.0.1", "localhost"):
         problems.append("api_server darf nur an 127.0.0.1 gebunden werden.")
     return problems

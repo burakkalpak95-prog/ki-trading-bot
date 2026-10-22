@@ -71,4 +71,7 @@ def test_cli_has_no_trading_command():
     from kitb.cli import build_parser
 
     sub = next(a for a in build_parser()._actions if a.dest == "command")
-    assert not {"trade", "live", "dry-run"} & set(sub.choices)
+    assert not {"trade", "dry-run"} & set(sub.choices)
+    # `live` existiert nur für Checkliste und Bestätigung der Risikolimits – keine Aktion, die handelt.
+    live = next(a for a in sub.choices["live"]._actions if a.dest == "action")
+    assert set(live.choices) == {"readiness", "confirm-risk"}

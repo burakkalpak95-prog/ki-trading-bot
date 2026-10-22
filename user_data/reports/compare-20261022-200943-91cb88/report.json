@@ -1,0 +1,574 @@
+{
+  "compare_id": "20261022-200943-91cb88",
+  "data_source": "synthetic",
+  "synthetic_data": true,
+  "timeframe": "1h",
+  "segments": {
+    "train": "20230101-20240315",
+    "validation": "20240315-20240808",
+    "test": "20240808-20250101"
+  },
+  "test_set_used": false,
+  "results": {
+    "AgentGatedBaseline": {
+      "segments": {
+        "train": {
+          "total_trades": 71,
+          "profit_total": 0.184517726205,
+          "max_drawdown_account": 0.06560152124859571,
+          "profit_factor": 1.5991162408139468,
+          "sharpe": 0.4746525811982404,
+          "winrate": 0.3380281690140845,
+          "exposure": 0.2042,
+          "total_cost_abs_incl_slippage": 517.1275,
+          "excess_vs_buy_and_hold": 0.22574585264631353,
+          "low_sample_warning": false
+        },
+        "validation": {
+          "total_trades": 28,
+          "profit_total": -0.09263950197,
+          "max_drawdown_account": 0.09263950196999994,
+          "profit_factor": 0.05716710757028883,
+          "sharpe": -3.364275825131612,
+          "winrate": 0.17857142857142858,
+          "exposure": 0.1625,
+          "total_cost_abs_incl_slippage": 179.3828,
+          "excess_vs_buy_and_hold": -0.0768913839714266,
+          "low_sample_warning": true
+        }
+      },
+      "buy_and_hold": {
+        "train": -0.04122812644131352,
+        "validation": -0.015748117998573397
+      },
+      "regimes": [
+        {
+          "trend": "down",
+          "volatility": "high",
+          "trades": 10,
+          "profit_abs": -93.88,
+          "avg_profit_ratio": -0.0041,
+          "winrate": 0.4,
+          "low_sample": true
+        },
+        {
+          "trend": "down",
+          "volatility": "low",
+          "trades": 16,
+          "profit_abs": 441.83,
+          "avg_profit_ratio": 0.01401,
+          "winrate": 0.25,
+          "low_sample": true
+        },
+        {
+          "trend": "sideways",
+          "volatility": "high",
+          "trades": 15,
+          "profit_abs": 1335.64,
+          "avg_profit_ratio": 0.04344,
+          "winrate": 0.333,
+          "low_sample": true
+        },
+        {
+          "trend": "sideways",
+          "volatility": "low",
+          "trades": 11,
+          "profit_abs": -297.04,
+          "avg_profit_ratio": -0.01327,
+          "winrate": 0.273,
+          "low_sample": true
+        },
+        {
+          "trend": "unknown",
+          "volatility": "unknown",
+          "trades": 9,
+          "profit_abs": -451.2,
+          "avg_profit_ratio": -0.02564,
+          "winrate": 0.222,
+          "low_sample": true
+        },
+        {
+          "trend": "up",
+          "volatility": "high",
+          "trades": 21,
+          "profit_abs": -177.96,
+          "avg_profit_ratio": -0.00452,
+          "winrate": 0.238,
+          "low_sample": true
+        },
+        {
+          "trend": "up",
+          "volatility": "low",
+          "trades": 17,
+          "profit_abs": 161.39,
+          "avg_profit_ratio": 0.00439,
+          "winrate": 0.353,
+          "low_sample": true
+        }
+      ],
+      "windows": [
+        {
+          "window": "20230101-20230401",
+          "profit_total": -0.041944124713000006,
+          "excess_vs_buy_and_hold": 0.0009637182668731509,
+          "trades": 12
+        },
+        {
+          "window": "20230401-20230630",
+          "profit_total": 0.08349309756200002,
+          "excess_vs_buy_and_hold": 0.2168090052017081,
+          "trades": 19
+        },
+        {
+          "window": "20230630-20230928",
+          "profit_total": 0.04999636178600001,
+          "excess_vs_buy_and_hold": -0.41315788144803967,
+          "trades": 14
+        },
+        {
+          "window": "20230928-20231227",
+          "profit_total": 0.07073458276,
+          "excess_vs_buy_and_hold": -0.0986413631056921,
+          "trades": 12
+        },
+        {
+          "window": "20231227-20240326",
+          "profit_total": -0.009541541336999994,
+          "excess_vs_buy_and_hold": 0.19352681011729592,
+          "trades": 19
+        },
+        {
+          "window": "20240326-20240624",
+          "profit_total": -0.042782248148,
+          "excess_vs_buy_and_hold": -0.2326053881435821,
+          "trades": 18
+        }
+      ],
+      "window_stability": {
+        "windows": 6,
+        "share_positive": 0.5,
+        "share_beating_buy_and_hold": 0.5
+      }
+    },
+    "BaselineEmaCross": {
+      "segments": {
+        "train": {
+          "total_trades": 176,
+          "profit_total": 0.1765296892450001,
+          "max_drawdown_account": 0.21230436688995483,
+          "profit_factor": 1.2216293566841112,
+          "sharpe": 0.5056616628056921,
+          "winrate": 0.2840909090909091,
+          "exposure": 0.4896,
+          "total_cost_abs_incl_slippage": 1259.2509,
+          "excess_vs_buy_and_hold": 0.2177578156863136,
+          "low_sample_warning": false
+        },
+        "validation": {
+          "total_trades": 70,
+          "profit_total": -0.06355252120000002,
+          "max_drawdown_account": 0.09426981436331934,
+          "profit_factor": 0.7534692055213597,
+          "sharpe": -0.7676749372249243,
+          "winrate": 0.2714285714285714,
+          "exposure": 0.5003,
+          "total_cost_abs_incl_slippage": 462.4054,
+          "excess_vs_buy_and_hold": -0.04780440320142662,
+          "low_sample_warning": false
+        }
+      },
+      "buy_and_hold": {
+        "train": -0.04122812644131352,
+        "validation": -0.015748117998573397
+      },
+      "regimes": [
+        {
+          "trend": "down",
+          "volatility": "high",
+          "trades": 50,
+          "profit_abs": -656.34,
+          "avg_profit_ratio": -0.00557,
+          "winrate": 0.2,
+          "low_sample": false
+        },
+        {
+          "trend": "down",
+          "volatility": "low",
+          "trades": 57,
+          "profit_abs": 1811.25,
+          "avg_profit_ratio": 0.016,
+          "winrate": 0.351,
+          "low_sample": false
+        },
+        {
+          "trend": "sideways",
+          "volatility": "high",
+          "trades": 25,
+          "profit_abs": 872.53,
+          "avg_profit_ratio": 0.01816,
+          "winrate": 0.24,
+          "low_sample": true
+        },
+        {
+          "trend": "sideways",
+          "volatility": "low",
+          "trades": 30,
+          "profit_abs": -369.84,
+          "avg_profit_ratio": -0.00657,
+          "winrate": 0.333,
+          "low_sample": false
+        },
+        {
+          "trend": "unknown",
+          "volatility": "unknown",
+          "trades": 17,
+          "profit_abs": 72.6,
+          "avg_profit_ratio": 0.00341,
+          "winrate": 0.294,
+          "low_sample": true
+        },
+        {
+          "trend": "up",
+          "volatility": "high",
+          "trades": 35,
+          "profit_abs": -97.59,
+          "avg_profit_ratio": -0.00225,
+          "winrate": 0.286,
+          "low_sample": false
+        },
+        {
+          "trend": "up",
+          "volatility": "low",
+          "trades": 32,
+          "profit_abs": -502.84,
+          "avg_profit_ratio": -0.00723,
+          "winrate": 0.25,
+          "low_sample": false
+        }
+      ],
+      "windows": [
+        {
+          "window": "20230101-20230401",
+          "profit_total": -0.02244988349899999,
+          "excess_vs_buy_and_hold": 0.020457959480873165,
+          "trades": 29
+        },
+        {
+          "window": "20230401-20230630",
+          "profit_total": -0.021172567597999997,
+          "excess_vs_buy_and_hold": 0.11214334004170808,
+          "trades": 42
+        },
+        {
+          "window": "20230630-20230928",
+          "profit_total": 0.114740170536,
+          "excess_vs_buy_and_hold": -0.3484140726980397,
+          "trades": 36
+        },
+        {
+          "window": "20230928-20231227",
+          "profit_total": 0.096975732513,
+          "excess_vs_buy_and_hold": -0.0724002133526921,
+          "trades": 34
+        },
+        {
+          "window": "20231227-20240326",
+          "profit_total": -0.03435338989799999,
+          "excess_vs_buy_and_hold": 0.16871496155629592,
+          "trades": 42
+        },
+        {
+          "window": "20240326-20240624",
+          "profit_total": 0.00961651194200001,
+          "excess_vs_buy_and_hold": -0.1802066280535821,
+          "trades": 42
+        }
+      ],
+      "window_stability": {
+        "windows": 6,
+        "share_positive": 0.5,
+        "share_beating_buy_and_hold": 0.5
+      }
+    },
+    "AgentGatedBreakout": {
+      "segments": {
+        "train": {
+          "total_trades": 71,
+          "profit_total": -0.026525392521,
+          "max_drawdown_account": 0.07992346135429412,
+          "profit_factor": 0.905510439241131,
+          "sharpe": -0.1001367354332446,
+          "winrate": 0.323943661971831,
+          "exposure": 0.0811,
+          "total_cost_abs_incl_slippage": 596.3292,
+          "excess_vs_buy_and_hold": 0.014702733920313519,
+          "low_sample_warning": false
+        },
+        "validation": {
+          "total_trades": 28,
+          "profit_total": -0.04856724636699999,
+          "max_drawdown_account": 0.05997816292798144,
+          "profit_factor": 0.43251663696526427,
+          "sharpe": -1.3510501265968513,
+          "winrate": 0.2857142857142857,
+          "exposure": 0.0935,
+          "total_cost_abs_incl_slippage": 230.4932,
+          "excess_vs_buy_and_hold": -0.03281912836842659,
+          "low_sample_warning": true
+        }
+      },
+      "buy_and_hold": {
+        "train": -0.04122812644131352,
+        "validation": -0.015748117998573397
+      },
+      "regimes": [
+        {
+          "trend": "down",
+          "volatility": "high",
+          "trades": 6,
+          "profit_abs": -111.16,
+          "avg_profit_ratio": -0.00765,
+          "winrate": 0.333,
+          "low_sample": true
+        },
+        {
+          "trend": "down",
+          "volatility": "low",
+          "trades": 14,
+          "profit_abs": -359.55,
+          "avg_profit_ratio": -0.01045,
+          "winrate": 0.143,
+          "low_sample": true
+        },
+        {
+          "trend": "sideways",
+          "volatility": "high",
+          "trades": 15,
+          "profit_abs": 703.31,
+          "avg_profit_ratio": 0.01964,
+          "winrate": 0.333,
+          "low_sample": true
+        },
+        {
+          "trend": "sideways",
+          "volatility": "low",
+          "trades": 15,
+          "profit_abs": -124.66,
+          "avg_profit_ratio": -0.00325,
+          "winrate": 0.333,
+          "low_sample": true
+        },
+        {
+          "trend": "unknown",
+          "volatility": "unknown",
+          "trades": 7,
+          "profit_abs": 312.33,
+          "avg_profit_ratio": 0.01841,
+          "winrate": 0.429,
+          "low_sample": true
+        },
+        {
+          "trend": "up",
+          "volatility": "high",
+          "trades": 19,
+          "profit_abs": -573.02,
+          "avg_profit_ratio": -0.01205,
+          "winrate": 0.368,
+          "low_sample": true
+        },
+        {
+          "trend": "up",
+          "volatility": "low",
+          "trades": 23,
+          "profit_abs": -598.17,
+          "avg_profit_ratio": -0.01033,
+          "winrate": 0.304,
+          "low_sample": true
+        }
+      ],
+      "windows": [
+        {
+          "window": "20230101-20230401",
+          "profit_total": 0.017274092541000003,
+          "excess_vs_buy_and_hold": 0.060181935520873156,
+          "trades": 11
+        },
+        {
+          "window": "20230401-20230630",
+          "profit_total": -0.019099488449999997,
+          "excess_vs_buy_and_hold": 0.11421641918970808,
+          "trades": 20
+        },
+        {
+          "window": "20230630-20230928",
+          "profit_total": -0.025435394028999997,
+          "excess_vs_buy_and_hold": -0.4885896372630397,
+          "trades": 16
+        },
+        {
+          "window": "20230928-20231227",
+          "profit_total": 0.03289657852399999,
+          "excess_vs_buy_and_hold": -0.1364793673416921,
+          "trades": 16
+        },
+        {
+          "window": "20231227-20240326",
+          "profit_total": -0.027129333435999995,
+          "excess_vs_buy_and_hold": 0.17593901801829592,
+          "trades": 9
+        },
+        {
+          "window": "20240326-20240624",
+          "profit_total": -0.027822672248999997,
+          "excess_vs_buy_and_hold": -0.2176458122445821,
+          "trades": 19
+        }
+      ],
+      "window_stability": {
+        "windows": 6,
+        "share_positive": 0.333,
+        "share_beating_buy_and_hold": 0.5
+      }
+    },
+    "BreakoutDonchian": {
+      "segments": {
+        "train": {
+          "total_trades": 113,
+          "profit_total": 0.037416053513999986,
+          "max_drawdown_account": 0.08898434101913748,
+          "profit_factor": 1.0733492664667992,
+          "sharpe": 0.1130874124127968,
+          "winrate": 0.34513274336283184,
+          "exposure": 0.1345,
+          "total_cost_abs_incl_slippage": 1004.5221,
+          "excess_vs_buy_and_hold": 0.0786441799553135,
+          "low_sample_warning": false
+        },
+        "validation": {
+          "total_trades": 44,
+          "profit_total": 0.049657325281,
+          "max_drawdown_account": 0.0555370595428253,
+          "profit_factor": 1.342824789035066,
+          "sharpe": 0.477070823866193,
+          "winrate": 0.2727272727272727,
+          "exposure": 0.1704,
+          "total_cost_abs_incl_slippage": 381.9414,
+          "excess_vs_buy_and_hold": 0.0654054432795734,
+          "low_sample_warning": false
+        }
+      },
+      "buy_and_hold": {
+        "train": -0.04122812644131352,
+        "validation": -0.015748117998573397
+      },
+      "regimes": [
+        {
+          "trend": "down",
+          "volatility": "high",
+          "trades": 24,
+          "profit_abs": 202.75,
+          "avg_profit_ratio": 0.00389,
+          "winrate": 0.333,
+          "low_sample": true
+        },
+        {
+          "trend": "down",
+          "volatility": "low",
+          "trades": 29,
+          "profit_abs": 550.65,
+          "avg_profit_ratio": 0.00763,
+          "winrate": 0.241,
+          "low_sample": true
+        },
+        {
+          "trend": "sideways",
+          "volatility": "high",
+          "trades": 21,
+          "profit_abs": 545.33,
+          "avg_profit_ratio": 0.01066,
+          "winrate": 0.286,
+          "low_sample": true
+        },
+        {
+          "trend": "sideways",
+          "volatility": "low",
+          "trades": 23,
+          "profit_abs": -250.81,
+          "avg_profit_ratio": -0.00407,
+          "winrate": 0.304,
+          "low_sample": true
+        },
+        {
+          "trend": "unknown",
+          "volatility": "unknown",
+          "trades": 10,
+          "profit_abs": 744.32,
+          "avg_profit_ratio": 0.03086,
+          "winrate": 0.5,
+          "low_sample": true
+        },
+        {
+          "trend": "up",
+          "volatility": "high",
+          "trades": 24,
+          "profit_abs": -213.01,
+          "avg_profit_ratio": -0.00317,
+          "winrate": 0.417,
+          "low_sample": true
+        },
+        {
+          "trend": "up",
+          "volatility": "low",
+          "trades": 26,
+          "profit_abs": -708.5,
+          "avg_profit_ratio": -0.01024,
+          "winrate": 0.308,
+          "low_sample": true
+        }
+      ],
+      "windows": [
+        {
+          "window": "20230101-20230401",
+          "profit_total": 0.040381619794000005,
+          "excess_vs_buy_and_hold": 0.08328946277387317,
+          "trades": 17
+        },
+        {
+          "window": "20230401-20230630",
+          "profit_total": 0.008163820788999993,
+          "excess_vs_buy_and_hold": 0.14147972842870807,
+          "trades": 28
+        },
+        {
+          "window": "20230630-20230928",
+          "profit_total": -0.022058627021000008,
+          "excess_vs_buy_and_hold": -0.48521287025503973,
+          "trades": 25
+        },
+        {
+          "window": "20230928-20231227",
+          "profit_total": 0.104586722203,
+          "excess_vs_buy_and_hold": -0.0647892236626921,
+          "trades": 25
+        },
+        {
+          "window": "20231227-20240326",
+          "profit_total": -0.095691968341,
+          "excess_vs_buy_and_hold": 0.10737638311329592,
+          "trades": 20
+        },
+        {
+          "window": "20240326-20240624",
+          "profit_total": 0.05680642370299999,
+          "excess_vs_buy_and_hold": -0.1330167162925821,
+          "trades": 27
+        }
+      ],
+      "window_stability": {
+        "windows": 6,
+        "share_positive": 0.667,
+        "share_beating_buy_and_hold": 0.5
+      }
+    }
+  }
+}
