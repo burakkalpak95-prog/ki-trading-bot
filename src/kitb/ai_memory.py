@@ -37,7 +37,8 @@ FEATURE_TEXT = {
 }
 MIN_TRADES_TO_TRAIN = 50
 HOLDOUT_SHARE = 0.2
-ALLOW_THRESHOLD = 0.5
+# Schwelle = Gewinnquote im Training: erlaubt werden Trades mit überdurchschnittlicher Gewinnchance. Eine feste 0,5 würde
+# bei Strategien mit wenigen, aber großen Gewinnen (Trefferquote ~25 %) jeden Trade ablehnen.
 
 
 def memory_dir(user_data: Path | None = None) -> Path:
@@ -234,8 +235,8 @@ def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, regi
     x_ho = _design(hold, list(x_tr.columns))
     m = _fit(x_tr, train["win"])
     p = m.predict_proba(x_ho)[:, 1]
-    allow = p >= ALLOW_THRESHOLD
     base_rate = float(train["win"].mean())
+    allow = p >= base_rate
     acc = float(((p >= 0.5).astype(int) == hold["win"]).mean())
     naive_acc = float((hold["win"] == int(base_rate >= 0.5)).mean())
     try:
@@ -253,14 +254,15 @@ def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, regi
     metrics = {"accuracy": round(acc, 4), "naive_accuracy": round(naive_acc, 4),
                "auc": None if auc is None else round(auc, 4), "win_rate_holdout": round(float(hold["win"].mean()), 4),
                "avg_profit_all": round(avg_all, 5), "avg_profit_kept": None if avg_kept is None else round(avg_kept, 5),
-               "kept_share": round(float(allow.mean()), 4),
+               "kept_share": round(float(allow.mean()), 4), "threshold": round(base_rate, 4),
                "holdout_from": str(hold["close_date"].iloc[0]), "holdout_to": str(hold["close_date"].iloc[-1]),
                "paper_trades": int((memory["source"] == "paper").sum())}
     final = _fit(_design(memory), memory["win"])
     out = memory_dir(user_data)
     out.mkdir(parents=True, exist_ok=True)
     model_file = out / f"filter-{datetime.now(UTC):%Y%m%d-%H%M%S}.joblib"
-    joblib.dump({"model": final, "columns": list(_design(memory).columns)}, model_file)
+    joblib.dump({"model": final, "columns": list(_design(memory).columns),
+                 "threshold": float(memory["win"].mean())}, model_file)
     (out / "filter-latest.json").write_text(json.dumps({"model_file": model_file.name}), encoding="utf-8")
     importances = dict(sorted(grouped.items(), key=lambda kv: -kv[1]))
     if registry is not None:
@@ -296,7 +298,7 @@ def allow_entry(*, strategy: str, pair: str, when: Any, user_data: Path | None =
     row = pd.DataFrame([{**f, "strategy": strategy, "pair": pair}])
     x = _design(row, _cache["bundle"]["columns"])
     p = float(_cache["bundle"]["model"].predict_proba(x)[:, 1][0])
-    return p >= ALLOW_THRESHOLD, p
+    return p >= _cache["bundle"].get("threshold", 0.5), p
 
 
 # --- Auswertung für die Seite „Was hat die KI gelernt?“ ---------------------------------------------------------------
@@ -308,9 +310,11 @@ def learning_progress(registry) -> dict[str, Any]:
     v = pd.DataFrame([{"Version": r["id"], "Datum": r["created_at"][:10], "Trades im Gedächtnis": r["n_trades"],
                        **json.loads(r["metrics"])} for r in rows])
     first, last = v.iloc[0], v.iloc[-1]
-    edge_first = first["accuracy"] - first["naive_accuracy"]
-    edge_last = last["accuracy"] - last["naive_accuracy"]
-    learned = round((last["accuracy"] - first["accuracy"]) * 100, 1)
+    # Trennschärfe (AUC): 50 % = Raten, 100 % = perfekt. „Dazugelernt“ = Veränderung seit Version 1 in %-Punkten.
+    auc_first = first["auc"] if first["auc"] is not None else 0.5
+    auc_last = last["auc"] if last["auc"] is not None else 0.5
+    edge_first, edge_last = auc_first - 0.5, auc_last - 0.5
+    learned = round((auc_last - auc_first) * 100, 1)
     filt_gain = (None if last["avg_profit_kept"] is None
                  else round((last["avg_profit_kept"] - last["avg_profit_all"]) * 100, 2))
     auc = last.get("auc")

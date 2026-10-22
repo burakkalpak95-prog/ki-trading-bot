@@ -141,16 +141,18 @@ def learned_page() -> None:
     st.markdown(f"### {prog['verdict']}")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Dazugelernt seit Version 1", f"{prog['learned_pct']:+.1f} %-Punkte",
-              help="Trefferquote auf ungesehenen Trades: heute minus erste Version.")
-    c2.metric("Trefferquote heute", f"{last['accuracy']:.1%}",
-              f"{prog['edge_last']:+.1f} Punkte ggü. Raten", delta_color="normal")
+              help="Trennschärfe auf ungesehenen Trades: heute minus erste Version.")
+    c2.metric("Trennschärfe heute", "–" if last["auc"] is None else f"{last['auc']:.1%}",
+              f"{prog['edge_last']:+.1f} Punkte über Raten (50 %)", delta_color="normal",
+              help="Wie gut die KI gewinnende von verlierenden Trades unterscheidet: 50 % = Raten, 100 % = perfekt.")
     c3.metric("Filter-Vorteil je Trade", "–" if prog["filter_gain_pct"] is None else f"{prog['filter_gain_pct']:+.2f} %",
               help="Durchschnittlicher Gewinn der Trades, die die KI erlaubt hätte, minus Durchschnitt aller Trades.")
     c4.metric("Gedächtnis", f"{int(last['Trades im Gedächtnis'])} Trades",
               f"davon {int(last['paper_trades'])} aus dem Paper-Trading", delta_color="off")
     v = prog["versions"].set_index("Datum")
     st.subheader("Verlauf")
-    st.line_chart(v[["accuracy", "naive_accuracy"]].rename(columns={"accuracy": "KI", "naive_accuracy": "Raten"}))
+    v = v.assign(Raten=0.5)
+    st.line_chart(v[["auc", "Raten"]].rename(columns={"auc": "KI (Trennschärfe)"}))
     st.subheader("Worauf die KI achtet")
     imp = {ai_memory.FEATURE_TEXT.get(k, k): v for k, v in prog["importances"].items() if v > 0}
     if imp:
@@ -160,7 +162,7 @@ def learned_page() -> None:
     else:
         st.write("Noch kein Merkmal mit messbarem Einfluss.")
     st.caption("Gemessen wird immer auf den jüngsten 20 % der Trades, die die KI beim Prüftraining nicht gesehen hat. "
-               "„Raten“ = immer das häufigere Ergebnis vorhersagen. Der Prüfzeitraum verschiebt sich mit jedem Tag; "
+               "Erlaubt werden Trades mit überdurchschnittlicher Gewinnchance. Der Prüfzeitraum verschiebt sich mit jedem Tag; "
                "einzelne Ausschläge sind normal. Aussagekräftig ist der Trend über Wochen.")
     with st.expander("Alle Versionen"):
         st.dataframe(prog["versions"], hide_index=True, width="stretch")

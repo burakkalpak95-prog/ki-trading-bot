@@ -59,7 +59,7 @@ def test_daily_learns_pattern_and_filter_only_rejects(home):
     fetch = lambda ex, pair, limit=1000: d  # noqa: E731
     reg = Registry(paths.REGISTRY_DB)
     res = ai_memory.daily(registry=reg, fetch=fetch)
-    assert res["trained"] and res["metrics"]["accuracy"] > res["metrics"]["naive_accuracy"]
+    assert res["trained"] and res["metrics"]["auc"] > 0.6 and 0 < res["metrics"]["kept_share"] < 1
     assert next(iter(res["importances"])) == "dist_sma200"
     prog = ai_memory.learning_progress(reg)
     assert prog["learned_pct"] == 0.0 and prog["verdict"].startswith("🟢")
@@ -88,3 +88,22 @@ def test_seed_from_backtests_on_synthetic_data(tmp_path):
     n = ai_memory.seed_from_backtests(datadir=d, data_source="synthetic", user_data=home, offline=True)
     hist = pd.read_parquet(ai_memory.memory_dir(home) / "history_trades.parquet")
     assert n == len(hist) > 50 and hist["strategy"].nunique() >= 4
+
+
+def test_low_win_rate_strategies_are_not_all_rejected(home):
+    """Strategien mit ~25 % Trefferquote: der Filter darf nicht pauschal alles ablehnen."""
+    d = _daily(seed=3)
+    t = ai_memory.daily_market_table(d).dropna()
+    rng = np.random.default_rng(3)
+    rows = []
+    for day in sorted(rng.choice(t.index, 800)):
+        win = rng.random() < (0.4 if t.loc[day, "dist_sma200"] > 0 else 0.1)
+        rows.append({"pair": "BTC/USDT", "open_date": day, "close_date": day + pd.Timedelta(days=1),
+                     "close_profit": 0.08 if win else -0.02, "close_profit_abs": 0.0, "stake_amount": 2000.0,
+                     "exit_reason": "x", "bot": "backtest", "round": "historisch", "source": "backtest",
+                     "strategy": "BreakoutDonchian"})
+    out = ai_memory.memory_dir(home)
+    out.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_parquet(out / "history_trades.parquet", index=False)
+    res = ai_memory.daily(registry=None, fetch=lambda ex, pair, limit=1000: d)
+    assert res["metrics"]["kept_share"] > 0.05 and res["metrics"]["avg_profit_kept"] > res["metrics"]["avg_profit_all"]
