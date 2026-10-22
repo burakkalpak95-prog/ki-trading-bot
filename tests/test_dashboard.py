@@ -66,3 +66,60 @@ def test_kill_switch_reset_requires_human(home):
         killswitch.reset("system")
     killswitch.reset("Burak")
     assert not killswitch.is_active()
+
+
+def _fake_daily(price_above: bool):
+    def fetch(exchange_id, pair, limit=210):
+        dates = pd.date_range("2026-01-01", periods=210, freq="D", tz="UTC")
+        close = [100.0] * 209 + [120.0 if price_above else 80.0]
+        return pd.DataFrame({"date": dates, "close": close})
+    return fetch
+
+
+def test_trend_view_uses_only_closed_candles():
+    df = _fake_daily(True)("binance", "BTC/USDT")
+    v = D.trend_view(df)
+    assert v["sma"] == 100.0 and v["above_now"] is True and v["above_at_last_close"] is False
+
+
+def test_overview_shows_positions_and_plain_text(home):
+    import sqlite3
+
+    db = home / "paper" / "trend_d1" / "tradesv3.dryrun.sqlite"
+    db.parent.mkdir(parents=True)
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE trades (id INTEGER, pair TEXT, is_open INTEGER, open_date TEXT, close_date TEXT, "
+                "open_rate REAL, close_rate REAL, amount REAL, stake_amount REAL, close_profit REAL, "
+                "close_profit_abs REAL, realized_profit REAL, exit_reason TEXT, fee_open REAL, fee_close REAL)")
+    con.execute("INSERT INTO trades VALUES (1,'BTC/USDT',1,'2026-10-22 22:12',NULL,100,NULL,10,1000,NULL,NULL,NULL,"
+                "NULL,0.001,NULL)")
+    con.commit()
+    con.close()
+    (db.parent / "freqtrade.log").write_text("heartbeat\n")
+    o = D.overview("trend_d1", 10000, fetch=_fake_daily(True))
+    assert o["running"] is True and len(o["positions"]) == 1
+    assert o["positions"][0]["Gewinn/Verlust (USDT)"] == 200.0 and o["equity"] == 10200.0
+    assert "bleibt investiert" in D.explain_market("BTC/USDT", o["markets"]["BTC/USDT"], True)
+    assert "kauft" in D.explain_market("ETH/USDT", o["markets"]["ETH/USDT"], False)
+
+
+def test_overview_survives_without_internet(home):
+    def broken(*a, **k):
+        raise OSError("offline")
+    o = D.overview("trend_d1", 10000, fetch=broken)
+    assert o["running"] is False and o["fetch_error"] and o["positions"] == []
+    assert "nicht abrufbar" in D.explain_market("BTC/USDT", o["markets"]["BTC/USDT"], False)
+
+
+def test_performance_compares_bot_with_holding():
+    dates = pd.date_range("2026-10-01", periods=10, freq="D", tz="UTC")
+    daily = {"BTC/USDT": pd.DataFrame({"date": dates, "close": [100.0] * 5 + [110.0] * 5}),
+             "ETH/USDT": pd.DataFrame({"date": dates, "close": [100.0] * 10})}
+    trades = pd.DataFrame([{"pair": "BTC/USDT", "is_open": 0, "open_date": "2026-10-01 00:00",
+                            "close_date": "2026-10-07 00:00", "open_rate": 100.0, "close_rate": 110.0, "amount": 10.0,
+                            "stake_amount": 1000.0, "close_profit_abs": 100.0, "exit_reason": "exit_signal"}])
+    p = D.performance(trades, daily, 10000)
+    assert p["bot_return"] == 0.01 and p["hold_return"] == 0.05
+    assert "zu früh" in p["verdict"] and p["winrate"] == 1.0
+    t = D.trades_table(trades, {})
+    assert t.iloc[0]["Ergebnis (USDT)"] == 100.0 and t.iloc[0]["Grund"] == "unter 200-Tage-Linie"

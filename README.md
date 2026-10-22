@@ -53,6 +53,18 @@ tests/                    Offline-Tests; `-m network` für echte Börsenabfragen
 docker/Dockerfile, docker-compose.yml, constraints.txt
 ```
 
+## Einfach starten (Windows, Doppelklick)
+
+Im Projektordner:
+
+- **„Trading-Bot starten.bat“** startet Docker Desktop (falls nötig), prüft die Sicherheitsregeln, startet das
+  Paper-Trading von DailyTrendSma (nur simuliert) und öffnet die **Übersicht** im Browser (http://127.0.0.1:8501).
+- **„Trading-Bot stoppen.bat“** hält Bot und Übersicht an (mit Rückfrage). Simulierte Positionen bleiben gespeichert.
+
+Die Übersicht (erster Reiter) zeigt in Alltagssprache: läuft der Bot, virtuelles Kapital, offene Positionen mit
+Gewinn/Verlust, was der Bot beim nächsten Tagesschluss vorhat, und die letzten Aktionen. Sie aktualisiert sich jede Minute.
+Voraussetzung: die Freigabe `kitb strategies approve --id trend_d1 --by NAME --reason ...` (einmalig).
+
 ## Schnellstart (Docker, empfohlen – auch unter Windows/WSL2)
 
 ```bash
