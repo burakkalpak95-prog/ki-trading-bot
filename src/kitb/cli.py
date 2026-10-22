@@ -289,6 +289,16 @@ def cmd_paper(args) -> int:
     return 0
 
 
+def cmd_live(args) -> int:
+    from kitb import live
+
+    if args.action == "readiness":
+        _print(live.readiness())
+    elif args.action == "confirm-risk":
+        print(f"Risikolimits bestätigt: {live.confirm_risk_limits(args.by)}")
+    return 0
+
+
 def cmd_runs(args) -> int:
     _print(Registry(paths.REGISTRY_DB).fetch(args.table, args.limit))
     return 0
@@ -398,6 +408,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", choices=["start", "stop", "status", "run", "report"])
     s.add_argument("--bot", default="all", choices=["bot_a", "bot_b", "all"])
     s.set_defaults(func=cmd_paper)
+
+    s = sub.add_parser("live", help="Live-Trading ist GESPERRT. Nur: readiness (Checkliste), confirm-risk")
+    s.add_argument("action", choices=["readiness", "confirm-risk"])
+    s.add_argument("--by")
+    s.set_defaults(func=cmd_live)
 
     s = sub.add_parser("runs", help="Protokoll anzeigen")
     s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs", "decisions",
