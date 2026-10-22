@@ -42,7 +42,52 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     result_file TEXT,
     metrics TEXT NOT NULL          -- JSON
 );
+CREATE TABLE IF NOT EXISTS decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    source TEXT NOT NULL,          -- backtest | paper
+    run_ref TEXT,                  -- Ergebnisdatei / Lauf-ID
+    bot TEXT, strategy TEXT NOT NULL, model_identifier TEXT, model_version_id INTEGER,
+    pair TEXT NOT NULL,
+    decided_at TEXT NOT NULL,      -- Schluss der Signalkerze (UTC)
+    action TEXT NOT NULL,          -- enter_long | exit_long | hold
+    proba_up REAL, do_predict INTEGER,
+    explanation TEXT,              -- Feature-Einfluss
+    market TEXT,                   -- JSON: Preis, Volatilität, Marktphase …
+    features TEXT,                 -- JSON: genutzte Featurewerte (Auswahl)
+    outcome TEXT,                  -- JSON: Gewinn, Gebühren, Ausstiegsgrund, Dauer
+    risk TEXT,                     -- JSON: Stoploss, ATR %, Positionsgröße
+    model_error TEXT               -- z. B. false_positive
+);
+CREATE TABLE IF NOT EXISTS model_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    bot TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    identifier TEXT NOT NULL,
+    freqaimodel TEXT NOT NULL,
+    config TEXT NOT NULL,          -- JSON: vollständige FreqAI-Overlay-Konfiguration
+    config_sha256 TEXT NOT NULL,
+    data_fingerprints TEXT NOT NULL,
+    eval_timerange TEXT NOT NULL,
+    metrics TEXT NOT NULL,         -- JSON
+    resources TEXT NOT NULL,       -- JSON
+    criteria TEXT,                 -- JSON: Ergebnis der Freigabeprüfung
+    status TEXT NOT NULL,          -- candidate | passed | failed | approved | active | retired
+    approved_by TEXT,
+    UNIQUE (bot, version)
+);
+CREATE TABLE IF NOT EXISTS model_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    model_version_id INTEGER NOT NULL,
+    event TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    details TEXT NOT NULL
+);
 """
+
+TABLES = ("source_events", "validation_reports", "backtest_runs", "decisions", "model_versions", "model_events")
 
 
 def _now() -> str:
@@ -60,6 +105,19 @@ class Registry:
         con = sqlite3.connect(self.path)
         con.row_factory = sqlite3.Row
         return con
+
+    def insert(self, table: str, row: dict[str, Any]) -> int:
+        if table not in TABLES:
+            raise ValueError(table)
+        return self._insert(table, {"created_at": _now(), **row})
+
+    def query(self, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
+        with closing(self._connect()) as con:
+            return [dict(r) for r in con.execute(sql, params).fetchall()]
+
+    def execute(self, sql: str, params: tuple = ()) -> None:
+        with closing(self._connect()) as con, con:
+            con.execute(sql, params)
 
     def _insert(self, table: str, row: dict[str, Any]) -> int:
         cols = ", ".join(row)
@@ -87,7 +145,7 @@ class Registry:
         return self._insert("backtest_runs", {"created_at": _now(), **row})
 
     def fetch(self, table: str, limit: int = 20) -> list[dict[str, Any]]:
-        if table not in ("source_events", "validation_reports", "backtest_runs"):
+        if table not in TABLES:
             raise ValueError(table)
         with closing(self._connect()) as con:
             rows = con.execute(f"SELECT * FROM {table} ORDER BY id DESC LIMIT ?", (limit,)).fetchall()

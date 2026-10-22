@@ -70,6 +70,10 @@ def test_bot_runs_walk_forward_and_measures_resources(bot, ml_env, tmp_path):
     res = r["resources"]
     assert res["wall_seconds"] > 0 and res["peak_rss_mb"] > 0 and res["model_disk_kb"] > 0
     assert res["trainings"] >= 2 * 2  # 2 Paare x mind. 2 Walk-Forward-Fenster
+    decisions = next(iter(r["strategies"].values()))["decisions"]
+    assert len(decisions) == m["total_trades"]
+    if decisions:
+        assert decisions[0]["explanation"] and decisions[0]["proba_up"] is not None
 
 
 def test_bot_a_is_reproducible_and_cleans_up(ml_env, tmp_path):
@@ -81,3 +85,21 @@ def test_bot_a_is_reproducible_and_cleans_up(ml_env, tmp_path):
     for k in ("profit_total", "total_trades", "winrate"):
         assert m1[k] == m2[k]
     assert not (ud / "models" / r1["identifier"]).exists()
+
+
+def test_ml_compare_registers_candidates_but_never_activates(ml_env, tmp_path):
+    from kitb import models
+    from kitb.ml import ml_compare
+    from kitb.registry import Registry
+
+    data, ud = ml_env
+    reg_path = tmp_path / "r.sqlite"
+    rep = ml_compare(datadir=data, data_source="synthetic", offline=True, registry_path=reg_path,
+                     results_dir=tmp_path / "res", user_data_dir=ud, report_dir=tmp_path / "rep", keep_models=False)
+    reg = Registry(reg_path)
+    versions = reg.fetch("model_versions", 10)
+    assert {v["bot"] for v in versions} == {"bot_a", "bot_b"}
+    assert all(v["status"] in ("passed", "failed") and v["approved_by"] is None for v in versions)
+    assert models.active(reg, "bot_a") is None and models.active(reg, "bot_b") is None
+    assert "verdict" in rep["results"]["validation"]
+    assert rep["test_set_used"] is False

@@ -1,0 +1,13 @@
+{
+    "$comment": "Dokumentierte Freigabekriterien für neue Modellversionen (Auswertung auf dem Validation-Abschnitt). Änderungen nur manuell per Git-Commit, nie durch ein Modell.",
+    "min_trades": 30,
+    "min_profit_factor": 1.05,
+    "max_drawdown": 0.25,
+    "min_profit_total": 0.0,
+    "max_mean_profit_pvalue": 0.05,
+    "must_beat_buy_and_hold": true,
+    "must_beat_reference": "BaselineEmaCross",
+    "must_beat_active_version": true,
+    "max_false_positive_rate": 0.7,
+    "max_wall_seconds": 3600
+}

@@ -41,6 +41,20 @@ def build_overlay(bot: str, identifier: str, out_dir: Path) -> Path:
     return path
 
 
+def _regimes(datadir: Path) -> dict:
+    from kitb.compare import _daily
+    from kitb.config import load_freqtrade_config
+    from kitb.evaluation import classify_regimes
+
+    out = {}
+    for pair in load_freqtrade_config()["exchange"]["pair_whitelist"]:
+        try:
+            out[pair] = classify_regimes(_daily(datadir, pair))
+        except Exception:  # Marktphase ist Zusatzinfo, kein Abbruchgrund
+            out[pair] = None
+    return {k: v for k, v in out.items() if v is not None}
+
+
 def _model_dir_size(user_data_dir: Path, identifier: str) -> int:
     d = user_data_dir / "models" / identifier
     return sum(f.stat().st_size for f in d.rglob("*") if f.is_file()) if d.exists() else 0
@@ -56,6 +70,7 @@ def _worker(kwargs: dict[str, Any]) -> dict[str, Any]:
     from kitb.backtest import run_freqtrade_backtest
 
     registry_path = kwargs.pop("registry_path")
+    decisions_spec = kwargs.pop("decisions_spec", None)
     t0 = time.perf_counter()
     cpu0 = resource.getrusage(resource.RUSAGE_SELF)
     res = run_freqtrade_backtest(registry=Registry(registry_path) if registry_path else None, **kwargs)
@@ -65,8 +80,15 @@ def _worker(kwargs: dict[str, Any]) -> dict[str, Any]:
         "cpu_seconds": round((cpu1.ru_utime + cpu1.ru_stime) - (cpu0.ru_utime + cpu0.ru_stime), 2),
         "peak_rss_mb": round(cpu1.ru_maxrss / 1024, 1),  # Linux: KiB
     }
-    for s in res["strategies"].values():
-        s.pop("trades", None)
+    for name, s in res["strategies"].items():
+        trades = s.pop("trades", [])
+        if decisions_spec:
+            from kitb.decisions import build_decisions, load_signals
+
+            s["decisions"] = build_decisions(load_signals(Path(res["result_file"]), name), trades,
+                                             strategy=name, timeframe=kwargs["timeframe"],
+                                             entry_proba=decisions_spec["entry_proba"],
+                                             regimes_by_pair=decisions_spec.get("regimes"))
     return res
 
 
@@ -84,7 +106,9 @@ def run_bot(bot: str, *, timerange: str, datadir: Path, data_source: str, offlin
     user_data_dir = user_data_dir or paths.USER_DATA
     identifier = f"{bot}-{compare_id or uuid.uuid4().hex[:8]}"
     overlay = build_overlay(bot, identifier, user_data_dir / "freqai_configs")
+    regimes = _regimes(datadir)
     res = run_isolated(
+        export="signals",
         strategies=[spec["strategy"]], timeframe="1h", timerange=timerange, datadir=datadir,
         data_source=data_source, offline=offline, registry_path=registry_path, results_dir=results_dir,
         config_path=None, extra_config_files=[overlay],
@@ -92,16 +116,19 @@ def run_bot(bot: str, *, timerange: str, datadir: Path, data_source: str, offlin
                     "--freqaimodel-path", str(paths.USER_DATA / "freqaimodels")],
         user_data_dir=user_data_dir,
         extra_metrics={"bot": bot, "model": spec["freqaimodel"], "model_identifier": identifier,
-                       "compare_id": compare_id})
+                       "compare_id": compare_id},
+        decisions_spec={"entry_proba": load_json(FREQAI_SHARED)["freqai"]["kitb"]["entry_proba"],
+                        "regimes": regimes})
     res["resources"]["model_disk_kb"] = round(_model_dir_size(user_data_dir, identifier) / 1024, 1)
     res["resources"]["trainings"] = _count_trainings(user_data_dir, identifier)
     res["identifier"] = identifier
+    res["overlay"] = json.loads(overlay.read_text(encoding="utf-8"))
     if not keep_models:
         shutil.rmtree(user_data_dir / "models" / identifier, ignore_errors=True)
     return res
 
 
-ML_TABLE_KEYS = ["total_trades", "profit_total", "max_drawdown_account", "profit_factor", "sharpe", "winrate",
+ML_TABLE_KEYS = ["total_trades", "p_value", "profit_total", "max_drawdown_account", "profit_factor", "sharpe", "winrate",
                  "exposure", "total_cost_abs_incl_slippage", "excess_vs_buy_and_hold", "low_sample_warning"]
 
 
@@ -137,17 +164,9 @@ def ml_compare(*, datadir: Path, data_source: str, include_test: bool = False, o
                               "test_set_used": include_test, "freqai_shared": shared,
                               "bots": {b: {k: v for k, v in spec.items()} for b, spec in project["bots"].items()},
                               "results": {}}
+    reg = Registry(registry_path) if registry_path else None
     for seg in evaluated:
         seg_res: dict[str, Any] = {}
-        for bot in project["bots"]:
-            r = run_bot(bot, timerange=seg.timerange, datadir=datadir, data_source=data_source, offline=offline,
-                        registry_path=registry_path, results_dir=results_dir, user_data_dir=user_data_dir,
-                        keep_models=keep_models, compare_id=f"{compare_id}-{seg.name}")
-            m = next(iter(r["strategies"].values()))["metrics"]
-            seg_res[bot] = {"metrics": {k: m.get(k) for k in ML_TABLE_KEYS}, "resources": r["resources"],
-                            "identifier": r["identifier"]}
-            report["synthetic_data"] = m["synthetic_data"]
-            report.setdefault("buy_and_hold", {})[seg.name] = m["buy_and_hold"]["equal_weight_net_return"]
         ref = run_isolated(strategies=references, timeframe="1h", timerange=seg.timerange, datadir=datadir,
                            data_source=data_source, offline=offline, registry_path=registry_path,
                            results_dir=results_dir, config_path=None, user_data_dir=user_data_dir,
@@ -155,6 +174,36 @@ def ml_compare(*, datadir: Path, data_source: str, include_test: bool = False, o
         for name, s in ref["strategies"].items():
             seg_res[name] = {"metrics": {k: s["metrics"].get(k) for k in ML_TABLE_KEYS},
                              "resources": {"wall_seconds_all_references": ref["resources"]["wall_seconds"]}}
+        reference_name = load_json(paths.CONFIG_DIR / "release_criteria.json").get("must_beat_reference")
+        for bot in project["bots"]:
+            r = run_bot(bot, timerange=seg.timerange, datadir=datadir, data_source=data_source, offline=offline,
+                        registry_path=registry_path, results_dir=results_dir, user_data_dir=user_data_dir,
+                        keep_models=keep_models, compare_id=f"{compare_id}-{seg.name}")
+            strat = next(iter(r["strategies"].values()))
+            m = strat["metrics"]
+            seg_res[bot] = {"metrics": {k: m.get(k) for k in ML_TABLE_KEYS}, "resources": r["resources"],
+                            "identifier": r["identifier"]}
+            report["synthetic_data"] = m["synthetic_data"]
+            report.setdefault("buy_and_hold", {})[seg.name] = m["buy_and_hold"]["equal_weight_net_return"]
+            decisions = strat.get("decisions", [])
+            fp_rate = (sum(d["model_error"] == "false_positive" for d in decisions) / len(decisions)
+                       if decisions else None)
+            seg_res[bot]["false_positive_rate"] = fp_rate
+            if reg and seg.name == "validation":
+                from kitb import models
+                from kitb.decisions import store_decisions
+
+                vid = models.register_candidate(
+                    reg, bot=bot, identifier=r["identifier"], freqaimodel=project["bots"][bot]["freqaimodel"],
+                    overlay=r["overlay"], data_fingerprints=r["data_fingerprints"], eval_timerange=seg.timerange,
+                    metrics=m, resources=r["resources"])
+                store_decisions(reg, decisions, source="backtest", run_ref=r["result_file"], bot=bot,
+                                model_identifier=r["identifier"], model_version_id=vid)
+                crit = models.evaluate_criteria(
+                    reg, vid, false_positive_rate=fp_rate,
+                    reference_metrics=ref["strategies"].get(reference_name, {}).get("metrics"))
+                seg_res[bot]["model_version_id"] = vid
+                seg_res[bot]["release_check"] = crit
         seg_res["verdict"] = verdict(seg_res, references)
         report["results"][seg.name] = seg_res
 
@@ -226,6 +275,13 @@ def render_ml_markdown(report: dict[str, Any]) -> str:
             rs = res[bot]["resources"]
             lines.append(f"| {bot} | {rs['wall_seconds']} | {rs['cpu_seconds']} | {rs['peak_rss_mb']} | "
                          f"{rs['model_disk_kb']} | {rs['trainings']} |")
+        for bot in report["bots"]:
+            rc = res[bot].get("release_check")
+            if rc:
+                failed = [k for k, ok in rc["checks"].items() if not ok]
+                lines.append(f"- {bot}: Modellversion #{res[bot]['model_version_id']} – Freigabekriterien "
+                             f"{'erfüllt' if rc['passed'] else 'nicht erfüllt: ' + ', '.join(failed)}")
+        lines.append("")
         v = res["verdict"]
         lines += ["", f"**Einordnung:** {v['statement']} Bot B − Bot A: {_pct(v['bot_b_minus_bot_a_profit'])}; "
                       f"Laufzeitfaktor Bot B/Bot A: {v['bot_b_cost_factor_wall_time']}×; "

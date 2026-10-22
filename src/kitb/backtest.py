@@ -75,7 +75,7 @@ def summarize(strategy_stats: dict[str, Any], cost_model: CostModel) -> dict[str
                + t["amount"] * t["close_rate"] * t.get("fee_close", 0) for t in trades)
     keys = ["profit_total", "profit_total_abs", "max_drawdown_account", "max_drawdown_abs",
             "profit_factor", "sharpe", "sortino", "calmar", "winrate", "market_change",
-            "starting_balance", "final_balance", "backtest_start", "backtest_end", "holding_avg"]
+            "starting_balance", "final_balance", "backtest_start", "backtest_end", "holding_avg", "p_value"]
     out = {k: strategy_stats.get(k) for k in keys}
     out.update({
         "total_trades": n,
@@ -105,6 +105,7 @@ def run_freqtrade_backtest(
     extra_config_files: list[Path] | None = None,
     extra_argv: list[str] | None = None,
     user_data_dir: Path | None = None,
+    export: str = "trades",
 ) -> dict[str, Any]:
     """Ein Freqtrade-Lauf für eine oder mehrere Strategien unter identischen Bedingungen."""
     assert_run_mode_allowed("backtest")
@@ -149,7 +150,7 @@ def run_freqtrade_backtest(
         "--userdir", str(user_data_dir or paths.USER_DATA),
         "--datadir", str(datadir), "--strategy-list", *strategies,
         "--strategy-path", str(paths.USER_DATA / "strategies"), "--timeframe", timeframe,
-        "--fee", str(cost_model.effective_fee_per_side), "--export", "trades",
+        "--fee", str(cost_model.effective_fee_per_side), "--export", export,
         "--backtest-directory", str(results_dir), "--data-format-ohlcv", "parquet",
         "--cache", "none", "--notes", f"kitb data_source={data_source} synthetic={synthetic}",
     ]

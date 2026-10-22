@@ -1,0 +1,306 @@
+{
+  "compare_id": "20261022-194121-dfcb5b",
+  "data_source": "synthetic",
+  "segments": {
+    "train": "20230101-20240315",
+    "validation": "20240315-20240808",
+    "test": "20240808-20250101"
+  },
+  "test_set_used": false,
+  "freqai_shared": {
+    "enabled": true,
+    "purge_old_models": 2,
+    "train_period_days": 90,
+    "backtest_period_days": 30,
+    "live_retrain_hours": 0,
+    "activate_tensorboard": false,
+    "write_metrics_to_disk": false,
+    "feature_parameters": {
+      "label_period_candles": 12,
+      "DI_threshold": 0,
+      "weight_factor": 0,
+      "use_SVM_to_remove_outliers": false,
+      "principal_component_analysis": false
+    },
+    "data_split_parameters": {
+      "test_size": 0.15,
+      "shuffle": false
+    },
+    "kitb": {
+      "label_threshold": 0.006,
+      "entry_proba": 0.6,
+      "exit_proba": 0.45,
+      "min_history_days_before_backtest": 300
+    }
+  },
+  "bots": {
+    "bot_a": {
+      "description": "Effizient: logistische Regression, wenige Features, nur 1h",
+      "strategy": "BotAEfficient",
+      "freqaimodel": "KitbLogisticRegression",
+      "feature_parameters": {
+        "include_timeframes": [
+          "1h"
+        ],
+        "include_corr_pairlist": [],
+        "indicator_periods_candles": [
+          14
+        ],
+        "include_shifted_candles": 0
+      },
+      "model_training_parameters": {
+        "C": 0.5,
+        "max_iter": 1000,
+        "class_weight": "balanced"
+      }
+    },
+    "bot_b": {
+      "description": "Erweitert: LightGBM, mehr Features, 1h+1d, BTC/ETH-Korrelation, verschobene Kerzen",
+      "strategy": "BotBExtended",
+      "freqaimodel": "KitbLightGBMClassifier",
+      "feature_parameters": {
+        "include_timeframes": [
+          "1h",
+          "1d"
+        ],
+        "include_corr_pairlist": [
+          "BTC/USDT",
+          "ETH/USDT"
+        ],
+        "indicator_periods_candles": [
+          10,
+          20,
+          50
+        ],
+        "include_shifted_candles": 2
+      },
+      "model_training_parameters": {
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "num_leaves": 31,
+        "random_state": 42,
+        "n_jobs": 4,
+        "verbose": -1,
+        "class_weight": "balanced"
+      }
+    }
+  },
+  "results": {
+    "validation": {
+      "BaselineEmaCross": {
+        "metrics": {
+          "total_trades": 70,
+          "profit_total": -0.124756625137,
+          "max_drawdown_account": 0.1860514327709398,
+          "profit_factor": 0.7643495017936734,
+          "sharpe": -0.7247966904146735,
+          "winrate": 0.2714285714285714,
+          "exposure": 0.5003,
+          "total_cost_abs_incl_slippage": 951.4689,
+          "excess_vs_buy_and_hold": -0.10900850713842661,
+          "low_sample_warning": false
+        },
+        "resources": {
+          "wall_seconds_all_references": 5.03
+        }
+      },
+      "TrendEmaAdx": {
+        "metrics": {
+          "total_trades": 43,
+          "profit_total": -0.08090537148899998,
+          "max_drawdown_account": 0.12092302932860408,
+          "profit_factor": 0.5902830909595232,
+          "sharpe": -0.9917715648374248,
+          "winrate": 0.23255813953488372,
+          "exposure": 0.1214,
+          "total_cost_abs_incl_slippage": 584.4013,
+          "excess_vs_buy_and_hold": -0.06515725349042659,
+          "low_sample_warning": false
+        },
+        "resources": {
+          "wall_seconds_all_references": 5.03
+        }
+      },
+      "MomentumMacdRsi": {
+        "metrics": {
+          "total_trades": 88,
+          "profit_total": -0.15083971736,
+          "max_drawdown_account": 0.17211439521677263,
+          "profit_factor": 0.5206883697359951,
+          "sharpe": -2.881991680689054,
+          "winrate": 0.2159090909090909,
+          "exposure": 0.101,
+          "total_cost_abs_incl_slippage": 1196.2356,
+          "excess_vs_buy_and_hold": -0.1350915993614266,
+          "low_sample_warning": false
+        },
+        "resources": {
+          "wall_seconds_all_references": 5.03
+        }
+      },
+      "MeanReversionBollinger": {
+        "metrics": {
+          "total_trades": 3,
+          "profit_total": -0.0025994081320000004,
+          "max_drawdown_account": 0.002844721942999968,
+          "profit_factor": 0.4863057171623181,
+          "sharpe": -0.1437208457936309,
+          "winrate": 0.3333333333333333,
+          "exposure": 0.008,
+          "total_cost_abs_incl_slippage": 40.8247,
+          "excess_vs_buy_and_hold": 0.013148709866573396,
+          "low_sample_warning": true
+        },
+        "resources": {
+          "wall_seconds_all_references": 5.03
+        }
+      },
+      "BreakoutDonchian": {
+        "metrics": {
+          "total_trades": 44,
+          "profit_total": 0.084266135016,
+          "max_drawdown_account": 0.08497010948457925,
+          "profit_factor": 1.3720192633779196,
+          "sharpe": 0.503299612230068,
+          "winrate": 0.2727272727272727,
+          "exposure": 0.1704,
+          "total_cost_abs_incl_slippage": 600.8353,
+          "excess_vs_buy_and_hold": 0.1000142530145734,
+          "low_sample_warning": false
+        },
+        "resources": {
+          "wall_seconds_all_references": 5.03
+        }
+      },
+      "VolatilitySqueeze": {
+        "metrics": {
+          "total_trades": 60,
+          "profit_total": -0.044596527029999986,
+          "max_drawdown_account": 0.0926532260233584,
+          "profit_factor": 0.7785070122380451,
+          "sharpe": -0.7431338450213304,
+          "winrate": 0.3333333333333333,
+          "exposure": 0.1269,
+          "total_cost_abs_incl_slippage": 816.6056,
+          "excess_vs_buy_and_hold": -0.02884840903142659,
+          "low_sample_warning": false
+        },
+        "resources": {
+          "wall_seconds_all_references": 5.03
+        }
+      },
+      "bot_a": {
+        "metrics": {
+          "total_trades": 55,
+          "profit_total": 0.02377963275700002,
+          "max_drawdown_account": 0.18631149631587027,
+          "profit_factor": 1.0511434392636116,
+          "sharpe": 0.10399571996905628,
+          "winrate": 0.43636363636363634,
+          "exposure": 0.2741,
+          "total_cost_abs_incl_slippage": 749.654,
+          "excess_vs_buy_and_hold": 0.03952775075557342,
+          "low_sample_warning": false
+        },
+        "resources": {
+          "wall_seconds": 2.94,
+          "cpu_seconds": 5.23,
+          "peak_rss_mb": 426.9,
+          "model_disk_kb": 393.6,
+          "trainings": 10
+        },
+        "identifier": "bot_a-20261022-194121-dfcb5b-validation",
+        "false_positive_rate": 0.5636363636363636,
+        "model_version_id": 1,
+        "release_check": {
+          "passed": true,
+          "checks": {
+            "min_trades": true,
+            "min_profit_factor": true,
+            "max_drawdown": true,
+            "min_profit_total": true,
+            "max_wall_seconds": true,
+            "beats_buy_and_hold": true,
+            "beats_reference": true,
+            "max_false_positive_rate": true,
+            "beats_active_version": true
+          },
+          "criteria": {
+            "min_trades": 30,
+            "min_profit_factor": 1.05,
+            "max_drawdown": 0.25,
+            "min_profit_total": 0.0,
+            "must_beat_buy_and_hold": true,
+            "must_beat_reference": "BaselineEmaCross",
+            "must_beat_active_version": true,
+            "max_false_positive_rate": 0.7,
+            "max_wall_seconds": 3600
+          },
+          "low_sample": false
+        }
+      },
+      "bot_b": {
+        "metrics": {
+          "total_trades": 222,
+          "profit_total": -0.23286506852999997,
+          "max_drawdown_account": 0.2701670112936659,
+          "profit_factor": 0.6928164958673853,
+          "sharpe": -3.223857816087599,
+          "winrate": 0.536036036036036,
+          "exposure": 0.1799,
+          "total_cost_abs_incl_slippage": 3020.2903,
+          "excess_vs_buy_and_hold": -0.21711695053142657,
+          "low_sample_warning": false
+        },
+        "resources": {
+          "wall_seconds": 34.28,
+          "cpu_seconds": 117.64,
+          "peak_rss_mb": 552.4,
+          "model_disk_kb": 557.4,
+          "trainings": 10
+        },
+        "identifier": "bot_b-20261022-194121-dfcb5b-validation",
+        "false_positive_rate": 0.46396396396396394,
+        "model_version_id": 2,
+        "release_check": {
+          "passed": false,
+          "checks": {
+            "min_trades": true,
+            "min_profit_factor": false,
+            "max_drawdown": false,
+            "min_profit_total": false,
+            "max_wall_seconds": true,
+            "beats_buy_and_hold": false,
+            "beats_reference": false,
+            "max_false_positive_rate": true,
+            "beats_active_version": true
+          },
+          "criteria": {
+            "min_trades": 30,
+            "min_profit_factor": 1.05,
+            "max_drawdown": 0.25,
+            "min_profit_total": 0.0,
+            "must_beat_buy_and_hold": true,
+            "must_beat_reference": "BaselineEmaCross",
+            "must_beat_active_version": true,
+            "max_false_positive_rate": 0.7,
+            "max_wall_seconds": 3600
+          },
+          "low_sample": false
+        }
+      },
+      "verdict": {
+        "bot_b_minus_bot_a_profit": -0.256644701287,
+        "bot_b_cost_factor_wall_time": 11.66,
+        "best_reference": "BreakoutDonchian",
+        "bot_a_beats_best_reference": false,
+        "bot_b_beats_best_reference": false,
+        "statement": "Bot B bringt in diesem Abschnitt keinen Mehrwert gegen\u00fcber Bot A."
+      }
+    }
+  },
+  "synthetic_data": true,
+  "buy_and_hold": {
+    "validation": -0.015748117998573397
+  }
+}

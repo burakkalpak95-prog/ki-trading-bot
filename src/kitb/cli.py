@@ -168,6 +168,64 @@ def cmd_ml_compare(args) -> int:
     return 0
 
 
+def cmd_models(args) -> int:
+    from kitb import models
+
+    reg = Registry(paths.REGISTRY_DB)
+    if args.action == "list":
+        rows = reg.query("SELECT id, bot, version, status, approved_by, eval_timerange, created_at, "
+                         "json_extract(metrics, '$.profit_total') AS profit_total, "
+                         "json_extract(metrics, '$.total_trades') AS trades FROM model_versions ORDER BY id DESC")
+        _print(rows)
+    elif args.action == "show":
+        _print(models.get(reg, args.id))
+    elif args.action == "approve":
+        models.approve(reg, args.id, by=args.by, override_reason=args.override_reason)
+        print(f"Version {args.id} freigegeben durch {args.by}.")
+    elif args.action == "activate":
+        models.activate(reg, args.id, by=args.by)
+        print(f"Version {args.id} ist jetzt aktiv.")
+    elif args.action == "rollback":
+        vid = models.rollback(reg, args.bot, by=args.by)
+        print(f"Rollback für {args.bot}: Version {vid} ist wieder aktiv.")
+    return 0
+
+
+def cmd_drift(args) -> int:
+    from kitb.data.storage import load_ohlcv_raw
+    from kitb.drift import feature_drift, performance_drift
+
+    project = load_project_config()
+    datadir = paths.SYNTHETIC_DATA_DIR if args.source == "synthetic" else paths.DATA_DIR / args.source
+    out = {"market": {}}
+    for pair in project["allowed_pairs"]:
+        out["market"][pair] = feature_drift(load_ohlcv_raw(datadir, pair, "1h"), args.reference_days, args.recent_days)
+    reg = Registry(paths.REGISTRY_DB)
+    for bot in project["bots"]:
+        rows = reg.query("SELECT decided_at, json_extract(outcome, '$.profit_abs') > 0 AS win, model_error "
+                         "FROM decisions WHERE bot = ? AND source = ?", (bot, args.decisions_source))
+        out.setdefault("performance", {})[bot] = performance_drift(pd.DataFrame(rows, columns=["decided_at", "win", "model_error"]))
+    _print(out)
+    drifted = any(m["drift"] == "significant" for m in out["market"].values()) or any(
+        p.get("status") == "drift" for p in out["performance"].values())
+    if drifted:
+        print("\nDRIFT erkannt: Empfehlung – neuen Trainingszyklus (kitb train-cycle) starten und Ergebnis prüfen. "
+              "Es wird nichts automatisch geändert.")
+    Registry(paths.REGISTRY_DB).log_source_event("drift", "drift_check", "drift" if drifted else "ok", out)
+    return 0
+
+
+def cmd_decisions(args) -> int:
+    reg = Registry(paths.REGISTRY_DB)
+    rows = reg.query("SELECT id, bot, strategy, pair, decided_at, action, round(proba_up, 3) AS proba_up, "
+                     "explanation, json_extract(outcome, '$.profit_ratio') AS profit_ratio, model_error, "
+                     "json_extract(market, '$.trend') AS trend FROM decisions "
+                     + ("WHERE bot = ? " if args.bot else "") + "ORDER BY id DESC LIMIT ?",
+                     ((args.bot, args.limit) if args.bot else (args.limit,)))
+    _print(rows)
+    return 0
+
+
 def cmd_runs(args) -> int:
     _print(Registry(paths.REGISTRY_DB).fetch(args.table, args.limit))
     return 0
@@ -230,8 +288,35 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--offline-markets", action="store_true")
     s.set_defaults(func=cmd_ml_compare)
 
+    s = sub.add_parser("train-cycle", help="Kontrollierter Trainingszyklus: Walk-Forward-Training + Validierung, "
+                                          "registriert Kandidaten (aktiviert nie automatisch)")
+    s.add_argument("--source", default="binance")
+    s.add_argument("--offline-markets", action="store_true")
+    s.set_defaults(func=cmd_ml_compare, include_test=False)
+
+    s = sub.add_parser("models", help="Modellversionen: list/show/approve/activate/rollback")
+    s.add_argument("action", choices=["list", "show", "approve", "activate", "rollback"])
+    s.add_argument("--id", type=int)
+    s.add_argument("--bot", choices=["bot_a", "bot_b"])
+    s.add_argument("--by", help="Name der freigebenden Person (Pflicht für approve/activate/rollback)")
+    s.add_argument("--override-reason", help="nur bewusst: Freigabe trotz nicht erfüllter Kriterien")
+    s.set_defaults(func=cmd_models)
+
+    s = sub.add_parser("drift", help="Markt- und Leistungs-Drift prüfen (nur Meldung, keine Aktion)")
+    s.add_argument("--source", default="binance")
+    s.add_argument("--reference-days", type=int, default=90)
+    s.add_argument("--recent-days", type=int, default=30)
+    s.add_argument("--decisions-source", default="backtest", choices=["backtest", "paper"])
+    s.set_defaults(func=cmd_drift)
+
+    s = sub.add_parser("decisions", help="Entscheidungsprotokoll anzeigen")
+    s.add_argument("--bot")
+    s.add_argument("--limit", type=int, default=20)
+    s.set_defaults(func=cmd_decisions)
+
     s = sub.add_parser("runs", help="Protokoll anzeigen")
-    s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs"])
+    s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs", "decisions",
+                                     "model_versions", "model_events"])
     s.add_argument("--limit", type=int, default=10)
     s.set_defaults(func=cmd_runs)
     return p
@@ -245,6 +330,13 @@ def main(argv: list[str] | None = None) -> int:
     except SafetyError as e:
         print(f"SICHERHEITSSTOPP: {e}", file=sys.stderr)
         return 2
+    except RuntimeError as e:
+        from kitb.models import GovernanceError
+
+        if isinstance(e, GovernanceError):
+            print(f"NICHT ERLAUBT: {e}", file=sys.stderr)
+            return 3
+        raise
 
 
 if __name__ == "__main__":
