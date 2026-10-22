@@ -21,6 +21,7 @@ def evaluate_agents(*, datadir: Path, data_source: str, offline: bool = False, r
     verdicts = {}
     for gated, base in pairs.items():
         g, b = res[gated]["segments"]["validation"], res[base]["segments"]["validation"]
+        gt, bt = res[gated]["segments"].get("train"), res[base]["segments"].get("train")
         gw, bw = res[gated]["windows"], res[base]["windows"]
         better = sum(x["profit_total"] > y["profit_total"] for x, y in zip(gw, bw))
         share = better / len(gw) if gw else 0.0
@@ -33,6 +34,9 @@ def evaluate_agents(*, datadir: Path, data_source: str, offline: bool = False, r
             or g["total_trades"] / b["total_trades"] >= crit["min_trades_kept_ratio"],
             "sample_ok": not g["low_sample_warning"],
         }
+        if crit.get("require_train_not_worse", True):
+            # Ein Vorteil nur im Validation-Abschnitt kann Zufall sein; im Train-Abschnitt darf der Filter nicht schaden.
+            checks["train_not_worse"] = bool(gt and bt) and gt["profit_total"] >= bt["profit_total"]
         verdicts[gated] = {"base": base, "checks": checks, "benefit_proven": all(checks.values()),
                            "validation_profit": {"with_agents": g["profit_total"], "without": b["profit_total"]},
                            "validation_drawdown": {"with_agents": g["max_drawdown_account"],

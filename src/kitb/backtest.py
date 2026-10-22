@@ -56,6 +56,15 @@ def buy_and_hold(df: pd.DataFrame, costs: CostModel) -> dict[str, float]:
     return {"gross_return": float(gross), "net_return": float(net), "max_drawdown": -max_dd}
 
 
+def equal_weight_max_drawdown(closes: dict[str, pd.Series]) -> float | None:
+    """Maximaler Drawdown eines gleichgewichteten Buy&Hold-Portfolios (Startkapital je Paar gleich, ohne Umschichtung)."""
+    aligned = pd.concat({p: c / c.iloc[0] for p, c in closes.items() if not c.empty}, axis=1).dropna()
+    if aligned.empty:
+        return None
+    value = aligned.mean(axis=1)
+    return float(-(value / value.cummax() - 1).min())
+
+
 def exposure(trades: list[dict], start: str, end: str, n_slots: int) -> float | None:
     """Anteil der verfügbaren Positions-Slots (max_open_trades), der im Markt verbracht wurde."""
     total = (pd.Timestamp(end) - pd.Timestamp(start)).total_seconds() * n_slots
@@ -135,7 +144,7 @@ def run_freqtrade_backtest(
         raise ValueError("Offline-Markets sind nur für synthetische Daten zulässig.")
 
     # 1) Daten validieren – bei Fehlern kein Backtest.
-    fingerprints, benchmark = {}, {}
+    fingerprints, benchmark, closes = {}, {}, {}
     for pair in pairs:
         df = _slice(load_ohlcv_raw(datadir, pair, timeframe), timerange)
         rep = validate_ohlcv(df, pair, timeframe, data_source,
@@ -147,7 +156,9 @@ def run_freqtrade_backtest(
                                    + "; ".join(i.message for i in rep.issues if i.severity == "ERROR"))
         fingerprints[pair] = rep.fingerprint
         benchmark[pair] = buy_and_hold(df, cost_model)
+        closes[pair] = df.set_index("date")["close"]
     benchmark["equal_weight_net_return"] = sum(b["net_return"] for b in benchmark.values()) / len(pairs)
+    benchmark["equal_weight_max_drawdown"] = equal_weight_max_drawdown(closes)
 
     # 2) Freqtrade-Backtest
     from freqtrade import __version__ as ft_version

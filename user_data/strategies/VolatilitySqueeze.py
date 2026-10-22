@@ -11,6 +11,7 @@ from technical import qtpylib
 from freqtrade.strategy import IStrategy
 from kitb.risk import RiskManagedMixin
 from kitb import indicators as ind
+from kitb.indicators import STARTUP_CANDLES_1H
 
 
 class VolatilitySqueeze(RiskManagedMixin, IStrategy):
@@ -21,7 +22,7 @@ class VolatilitySqueeze(RiskManagedMixin, IStrategy):
     stoploss = -0.06
     process_only_new_candles = True
     use_exit_signal = True
-    startup_candle_count = 520
+    startup_candle_count = STARTUP_CANDLES_1H
     order_types = {"entry": "market", "exit": "market", "stoploss": "market", "stoploss_on_exchange": False}
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:

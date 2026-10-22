@@ -57,6 +57,10 @@
         ],
         "ml_reference_strategies": [
             "BaselineEmaCross"
+        ],
+        "daily_strategies": [
+            "DailyTrendSma",
+            "DailyMomentum"
         ]
     },
     "bots": {
@@ -122,7 +126,8 @@
             "min_profit_improvement": 0.0,
             "max_drawdown_not_worse": true,
             "min_share_windows_better": 0.6,
-            "min_trades_kept_ratio": 0.3
+            "min_trades_kept_ratio": 0.3,
+            "require_train_not_worse": true
         }
     }
 }

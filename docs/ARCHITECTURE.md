@@ -155,3 +155,19 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - `kitb live readiness` zeigt die Checkliste für eine spätere Freigabe (u. a. mind. 100 Paper-Trades, bestätigte
   Risikolimits, Mindestordergrößen, unabhängige Prüfung). Eine Freischaltung erfordert Codeänderung + separate Freigabe.
 
+## ADR-014: Fairere Vergleiche nach den ersten Ergebnissen mit echten Daten (22.10.2026)
+
+- **Einheitliche Aufwärmphase:** Freqtrade lädt bei `--strategy-list` den Vorlauf für das Maximum aller Strategien
+  (`required_startup`, im Code von Freqtrade 2026.9 nachgesehen). EMAs hängen vom Startpunkt ab, deshalb lieferte dieselbe
+  Strategie je nach Zusammenstellung eines Laufs leicht andere Train-Werte (+17,87 % vs. +14,61 %). Alle 1h-Regel-Strategien
+  nutzen jetzt `STARTUP_CANDLES_1H = 520`, Tagesstrategien `STARTUP_CANDLES_1D = 200`. Rollierende Fenster beginnen erst
+  nach diesem Vorlauf.
+- **Risikobereinigter Vergleich:** Buy&Hold ist voll investiert, die Strategien wegen der Risikolimits (2 % Risiko je Trade
+  bei −10 % Stoploss → höchstens 20 % je Position) nur teilweise. Der Bericht zeigt deshalb zusätzlich den maximalen
+  Drawdown von Buy&Hold und das Verhältnis Rendite/Drawdown. Die Freigabekriterien bleiben unverändert.
+- **Agenten-Kriterium:** Ein Vorteil muss auch im Train-Abschnitt bestehen (`require_train_not_worse`); auf echten Daten
+  hatte der Filter nur im Validation-Abschnitt geholfen.
+- **Tagesstrategien:** `DailyTrendSma` (Schluss über SMA 200) und `DailyMomentum` (Schluss über dem von vor 90 Tagen) mit
+  festen, vorab gewählten Parametern – bewusst keine Optimierung, um Overfitting auf den Validation-Abschnitt zu vermeiden.
+  Weil die Daten am 01.01.2022 beginnen, startet ihr Train-Abschnitt erst nach 200 Tagen Vorlauf.
+

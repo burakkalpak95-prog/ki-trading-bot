@@ -47,7 +47,7 @@ src/kitb/
   paper.py                Paper-Trading-Steuerung (Freqtrade-Dry-Run je Bot)
   live.py                 Gesperrter Live-Adapter + Bereitschafts-Checkliste
   dashboard/              Streamlit-App (10 Reiter)
-user_data/strategies/     6 Regel-Strategien, Bot A/B, 2 Agenten-Varianten
+user_data/strategies/     6 Regel-Strategien (1h), 2 Tagesstrategien, Bot A/B, 2 Agenten-Varianten
 user_data/freqaimodels/   KitbLogisticRegression, KitbLightGBMClassifier
 tests/                    Offline-Tests; `-m network` für echte Börsenabfragen
 docker/Dockerfile, docker-compose.yml, constraints.txt
@@ -76,6 +76,7 @@ docker compose run --rm kitb synthetic
 ```bash
 docker compose run --rm kitb backtest --source binance --timerange 20230101-   # Baseline
 docker compose run --rm kitb compare --source binance                          # alle Regel-Strategien
+docker compose run --rm kitb compare --source binance --timeframe 1d           # Tagesstrategien (200-Tage-Trend, 90-Tage-Momentum)
 docker compose run --rm kitb ml-compare --source binance                       # Bot A vs. Bot B vs. Regeln
 docker compose run --rm kitb agents-evaluate --source binance                  # Nutzen der Agenten?
 docker compose run --rm kitb drift --source binance

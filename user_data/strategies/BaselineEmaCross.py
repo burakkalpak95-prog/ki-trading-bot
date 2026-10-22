@@ -14,6 +14,7 @@ import talib.abstract as ta
 from freqtrade.strategy import IStrategy, IntParameter
 from kitb.risk import RiskManagedMixin
 from technical import qtpylib
+from kitb.indicators import STARTUP_CANDLES_1H
 
 
 class BaselineEmaCross(RiskManagedMixin, IStrategy):
@@ -27,7 +28,7 @@ class BaselineEmaCross(RiskManagedMixin, IStrategy):
     process_only_new_candles = True
     use_exit_signal = True
     exit_profit_only = False
-    startup_candle_count = 200
+    startup_candle_count = STARTUP_CANDLES_1H
 
     # Feste Werte; als Parameter deklariert nur zur Dokumentation (keine Hyperopt in Phase 1).
     ema_fast = IntParameter(5, 50, default=21, space="buy", optimize=False)

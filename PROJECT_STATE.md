@@ -80,8 +80,18 @@ Validation-Abschnitt 19.11.2024 – 05.11.2025 (Test-Abschnitt 05.11.2025 – 22
 - Auffälligkeit: BaselineEmaCross liefert im Train-Abschnitt je nach Lauf leicht verschiedene Werte (+17,87 % / 437 Trades vs.
   +14,61 % / 439 Trades). Vermutete Ursache: unterschiedliche Vorlaufdaten je nach Strategie-Kombination (Indikator-Aufwärmphase) – Unsicher, nicht geprüft.
 
+**Gegenprobe OKX** (gleicher Zeitraum, eigene Daten, Validierung OK, 3 Stundenkerzen ohne Volumen in 2022): Ergebnisse fast
+deckungsgleich (z. B. Baseline −13,83 %, Bot A −8,28 %, Bot B −56,16 %, AgentGatedBaseline +5,09 %); gleiche Verdicts.
+Das zeigt Unabhängigkeit von der Börse, aber nicht von der Marktphase (BTC/ETH kosten auf beiden Börsen fast dasselbe).
+
 Berichte (auf dem Windows-Rechner): `user_data/reports/compare-20261022-211012-2bf0b6`, `ml-compare-20261022-211134-292bda`,
 `compare-20261022-211250-69b03e`.
+
+## Runde 2 (22.10.2026, Code fertig, Lauf auf echten Daten ausstehend)
+
+Einheitliche Aufwärmphase (behebt die schwankenden Train-Werte), Buy&Hold-Drawdown und Rendite/DD im Bericht, schärferes
+Agenten-Kriterium (Vorteil auch im Train-Abschnitt), zwei Tagesstrategien mit festen Parametern (`DailyTrendSma`,
+`DailyMomentum`). Details: docs/ARCHITECTURE.md, ADR-014. Tests (Cloud-venv): 169 bestanden.
 
 ## Erreichte Datenquellen (22.10.2026)
 
@@ -101,8 +111,8 @@ Berichte (auf dem Windows-Rechner): `user_data/reports/compare-20261022-211012-2
 
 1. **Kein Vorteil gegenüber Buy&Hold** auf echten Daten – weder Regel-Strategien noch KI-Bots. Ohne neue Idee (andere Features,
    Labels, Zeitintervalle oder Strategieform) ist Paper-Trading derzeit nicht sinnvoll.
-2. `agents-evaluate`: Nutzenkriterium verschärfen (Vorteil auch im Train-Abschnitt und über die Mehrheit der Fenster).
-3. Leicht unterschiedliche Train-Ergebnisse derselben Strategie je nach Lauf (Aufwärmphase vermutet) – untersuchen.
+2. `agents-evaluate`: Kriterium verschärft (Runde 2); Ergebnis auf echten Daten ausstehend.
+3. Leicht unterschiedliche Train-Ergebnisse je nach Lauf: Ursache gefunden (Freqtrade-Vorlauf = Maximum der Strategien), in Runde 2 behoben.
 4. Gebühr 0,10 % bei Binance für das eigene Konto prüfen; Slippage/Spread sind Schätzungen.
 5. Repository `burakkalpak95-prog/ki-trading-bot` ist öffentlich; Umstellung auf privat empfohlen.
 6. Auf Windows läuft das Projekt ohne Ubuntu direkt mit Docker Desktop aus `C:\Projekte\ki-trading-bot` (Bind-Mount langsamer als

@@ -61,7 +61,7 @@ def compare_strategies(
 ) -> dict[str, Any]:
     project = load_project_config()
     ev = project["evaluation"]
-    strategies = strategies or ev["strategies"]
+    strategies = strategies or (ev["daily_strategies"] if timeframe == "1d" else ev["strategies"])
     pairs = load_freqtrade_config()["exchange"]["pair_whitelist"]
     compare_id = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
 
@@ -92,7 +92,13 @@ def compare_strategies(
     # Rollierende Fenster über den ausgewerteten Zeitraum
     windows: dict[str, list[dict]] = {s: [] for s in strategies}
     if with_windows:
-        for win in rolling_windows(evaluated[0].start, evaluated[-1].end, ev["window_days"], ev["step_days"]):
+        # Fenster erst dort beginnen, wo genug Vorlauf für alle Indikatoren vorhanden ist (sonst bricht Freqtrade ab
+        # oder kürzt das Fenster unbemerkt).
+        from kitb.strategies import load_strategy
+
+        warmup = max(load_strategy(s).startup_candle_count for s in strategies) * to_timedelta(timeframe)
+        first = max(evaluated[0].start, (start + warmup).ceil("D"))
+        for win in rolling_windows(first, evaluated[-1].end, ev["window_days"], ev["step_days"]):
             res = run(win, "window")
             for strat in strategies:
                 m = res["strategies"][strat]["metrics"]
@@ -113,6 +119,9 @@ def compare_strategies(
                              for name, r in segment_results.items()},
                 "buy_and_hold": {name: r["strategies"][strat]["metrics"]["buy_and_hold"]["equal_weight_net_return"]
                                  for name, r in segment_results.items()},
+                "buy_and_hold_max_drawdown": {
+                    name: r["strategies"][strat]["metrics"]["buy_and_hold"].get("equal_weight_max_drawdown")
+                    for name, r in segment_results.items()},
                 "regimes": by_regime[strat],
                 "windows": windows[strat],
                 "window_stability": _stability(windows[strat]),
@@ -145,6 +154,13 @@ def _num(v: Any) -> str:
     return "–" if v is None else f"{v:.2f}"
 
 
+def return_to_drawdown(profit: Any, drawdown: Any) -> float | None:
+    """Rendite je Einheit maximalen Drawdowns – vergleicht Strategien mit unterschiedlichem Kapitaleinsatz fairer."""
+    if profit is None or not drawdown:
+        return None
+    return profit / drawdown
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     lines = [f"# Strategievergleich {report['compare_id']}", ""]
     if report["synthetic_data"]:
@@ -155,16 +171,19 @@ def render_markdown(report: dict[str, Any]) -> str:
     seg_names = list(next(iter(report["results"].values()))["segments"])
     for seg in seg_names:
         lines += [f"## Abschnitt: {seg}", "",
-                  "| Strategie | Trades | Netto | Max DD | Profit Factor | Sharpe | Trefferquote | Exposure | Kosten (USDT) | vs. Buy&Hold | Stichprobe |",
-                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
+                  "| Strategie | Trades | Netto | Max DD | Rendite/DD | Profit Factor | Sharpe | Trefferquote | Exposure | Kosten (USDT) | vs. Buy&Hold | Stichprobe |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
         for strat, res in report["results"].items():
             m = res["segments"][seg]
             lines.append(f"| {strat} | {m['total_trades']} | {_pct(m['profit_total'])} | {_pct(m['max_drawdown_account'])} | "
+                         f"{_num(return_to_drawdown(m['profit_total'], m['max_drawdown_account']))} | "
                          f"{_num(m['profit_factor'])} | {_num(m['sharpe'])} | {_pct(m['winrate'])} | {_pct(m['exposure'])} | "
                          f"{_num(m['total_cost_abs_incl_slippage'])} | {_pct(m['excess_vs_buy_and_hold'])} | "
                          f"{'zu klein' if m['low_sample_warning'] else 'ok'} |")
-        bh = next(iter(report["results"].values()))["buy_and_hold"][seg]
-        lines += ["", f"Buy&Hold (BTC/ETH gleichgewichtet, nach Kosten): {_pct(bh)}", ""]
+        first = next(iter(report["results"].values()))
+        bh, bh_dd = first["buy_and_hold"][seg], first.get("buy_and_hold_max_drawdown", {}).get(seg)
+        lines += ["", f"Buy&Hold (BTC/ETH gleichgewichtet, nach Kosten): {_pct(bh)} · Max DD {_pct(bh_dd)} · "
+                      f"Rendite/DD {_num(return_to_drawdown(bh, bh_dd))}", ""]
     lines += ["## Stabilität über rollierende Fenster", "",
               "| Strategie | Fenster | Anteil positiv | Anteil besser als Buy&Hold |", "|---|---:|---:|---:|"]
     for strat, res in report["results"].items():
@@ -179,6 +198,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"| {r['trend']} | {r['volatility']} | {r['trades']} | {_num(r['profit_abs'])} | "
                          f"{_pct(r['avg_profit_ratio'])} | {_pct(r['winrate'])} | {'zu klein' if r['low_sample'] else 'ok'} |")
         lines.append("")
-    lines += ["Hinweise: Kennzahlen mit weniger als 30 Trades sind statistisch kaum belastbar. "
+    lines += ["Hinweise: Buy&Hold ist voll investiert, die Strategien wegen der Risikolimits höchstens zu einem Teil. "
+              "Rendite/DD vergleicht deshalb fairer als die reine Rendite. "
+              "Kennzahlen mit weniger als 30 Trades sind statistisch kaum belastbar. "
               "Vergangene Ergebnisse garantieren keine zukünftigen Gewinne."]
     return "\n".join(lines) + "\n"

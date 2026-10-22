@@ -348,8 +348,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("compare", help="Alle Strategien fair vergleichen (Train/Validation, Fenster, Marktphasen)")
     s.add_argument("--source", default="binance", help="Börsenname oder 'synthetic'")
-    s.add_argument("--strategies", nargs="+", help="Standard: alle aus config/project.json")
-    s.add_argument("--timeframe", default="1h")
+    s.add_argument("--strategies", nargs="+", help="Standard: alle aus config/project.json (bei 1d: daily_strategies)")
+    s.add_argument("--timeframe", default="1h", choices=["1h", "1d"])
     s.add_argument("--include-test", action="store_true",
                    help="unberührten Test-Abschnitt auswerten (wird protokolliert; sparsam verwenden)")
     s.add_argument("--no-windows", action="store_true", help="rollierende Fenster überspringen")

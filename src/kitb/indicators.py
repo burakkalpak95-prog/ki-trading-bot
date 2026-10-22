@@ -7,6 +7,13 @@ nicht mehrfach mit leicht unterschiedlichen Parametern entstehen.
 import pandas as pd
 import talib.abstract as ta
 
+# Einheitliche Aufwärmphase aller 1h-Regel-Strategien. Freqtrade lädt bei --strategy-list den Vorlauf für das
+# Maximum aller Strategien; EMAs hängen vom Startpunkt ab. Mit einem gemeinsamen Wert liefert jede Strategie
+# unabhängig von der Zusammenstellung eines Laufs dieselben Signale.
+STARTUP_CANDLES_1H = 520
+# Dasselbe für Tagesstrategien (längster Indikator: SMA 200 Tage).
+STARTUP_CANDLES_1D = 200
+
 
 def add_ema(df: pd.DataFrame, *periods: int) -> pd.DataFrame:
     for p in periods:
@@ -57,3 +64,9 @@ def add_volume_sma(df: pd.DataFrame, period: int = 20) -> pd.DataFrame:
 def rolling_percentile_rank(series: pd.Series, window: int) -> pd.Series:
     """Rang des aktuellen Werts innerhalb der letzten ``window`` Werte (0..1), nur Vergangenheit."""
     return series.rolling(window).rank(pct=True)
+
+
+def add_sma(df: pd.DataFrame, *periods: int) -> pd.DataFrame:
+    for p in periods:
+        df[f"sma_{p}"] = ta.SMA(df, timeperiod=p)
+    return df
