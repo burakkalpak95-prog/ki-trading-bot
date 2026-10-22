@@ -87,11 +87,30 @@ Das zeigt Unabhängigkeit von der Börse, aber nicht von der Marktphase (BTC/ETH
 Berichte (auf dem Windows-Rechner): `user_data/reports/compare-20261022-211012-2bf0b6`, `ml-compare-20261022-211134-292bda`,
 `compare-20261022-211250-69b03e`.
 
-## Runde 2 (22.10.2026, Code fertig, Lauf auf echten Daten ausstehend)
+## Runde 2 – Ergebnisse auf echten Daten (Binance, 22.10.2026, Commit d5e65ba)
 
-Einheitliche Aufwärmphase (behebt die schwankenden Train-Werte), Buy&Hold-Drawdown und Rendite/DD im Bericht, schärferes
-Agenten-Kriterium (Vorteil auch im Train-Abschnitt), zwei Tagesstrategien mit festen Parametern (`DailyTrendSma`,
-`DailyMomentum`). Details: docs/ARCHITECTURE.md, ADR-014. Tests (Cloud-venv): 169 bestanden.
+Tests auf dem Windows-Rechner: 169 bestanden. Die Aufwärmphase ist jetzt einheitlich: BaselineEmaCross liefert in allen Läufen
+identische Werte (Train 437 Trades, +17,87 %).
+
+| | Train Netto / Max DD / Rendite/DD | Validation Netto / Max DD / Rendite/DD | Trades Val. |
+|---|---|---|---:|
+| Buy&Hold gleichgewichtet | +41,02 % / 69,61 % / 0,59 | +6,97 % / 48,44 % / 0,14 | – |
+| BaselineEmaCross (1h) | +17,87 % / 19,09 % / 0,94 | −13,77 % / 23,01 % / −0,60 | 163 |
+| BreakoutDonchian (1h) | −16,07 % / 28,27 % / −0,57 | −9,30 % / 16,01 % / −0,58 | – |
+| AgentGatedBaseline (1h) | +4,33 % / 10,76 % / 0,40 | +5,27 % / 6,23 % / 0,85 | – |
+| DailyTrendSma (1d) | +57,35 % / 1,54 % / 37,29 (14 Trades) | −1,01 % / 7,83 % / −0,13 | 14 |
+| DailyMomentum (1d) | +46,55 % / 6,30 % / 7,39 (47 Trades) | +5,53 % / 7,81 % / 0,71 | 9 |
+
+Übrige 1h-Strategien in Train und Validation negativ. Fenster (Anteil positiv / besser als Buy&Hold): DailyMomentum 53,8 % / 38,5 %,
+DailyTrendSma 53,8 % / 46,2 %. Train der Tagesstrategien beginnt wegen 200 Tagen Vorlauf erst Mitte 2022.
+
+- **Agenten:** Mit dem schärferen Kriterium kein belegter Nutzen mehr (AgentGatedBaseline schadet im Train, AgentGatedBreakout
+  nur in 53 % der Fenster besser) → bleiben aus.
+- **Tagesstrategien:** risikobereinigt besser als Buy&Hold, in der Validation aber nur 9–14 Trades → **nicht belastbar**.
+  Der Test-Abschnitt wird dafür noch nicht geöffnet.
+- **Nächste Prüfung (vorab festgelegt):** unabhängige Vorperiode 2019–2021 (Daten 2018–2021, bisher nie angesehen, eigener
+  Ordner). Kandidat gilt als robust, wenn dort gilt: Gewinn > 0, Profit Factor ≥ 1,2, Max DD ≤ 25 %, ≥ 15 Trades, und in
+  mindestens 2 von 3 Einzeljahren Gewinn. Nur dann wird der Test-Abschnitt einmalig ausgewertet.
 
 ## Erreichte Datenquellen (22.10.2026)
 
