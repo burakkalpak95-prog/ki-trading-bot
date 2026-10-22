@@ -13,3 +13,10 @@ user_data/*.sqlite-*
 .env
 *.secret.json
 config/*.local.json
+# Laufergebnisse (Modelle, Berichte, erzeugte FreqAI-Konfigurationen, Paper-DBs, Not-Stopp)
+user_data/models/
+user_data/reports/
+user_data/freqai_configs/
+user_data/paper/
+user_data/KILL_SWITCH
+user_data/*.json
