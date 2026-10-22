@@ -6,6 +6,8 @@ Ablauf (einmal täglich, ``kitb memory daily``):
    (``user_data/ai_memory/trades.parquet``).
 2. **Lernen:** Ein Klassifikator lernt, welche Trades sich gelohnt haben (Strategie, Markt, Marktlage -> Gewinn ja/nein).
 3. **Prüfen:** Gemessen wird immer auf den jüngsten 20 % der Trades, die das Modell beim Prüftraining nicht gesehen hat.
+3b. **Experimentieren:** Täglich werden mehrere Modelle und Schwellen ausprobiert (``experiment``); ausgewählt wird auf
+   einem eigenen Validierungsabschnitt, gemessen erst danach – hilft keine Variante, bleibt der Filter aus.
 4. **Anwenden:** Bots mit ``kitb_ai_filter`` fragen das jüngste Modell vor jedem Einstieg; bei geringer
    Gewinnwahrscheinlichkeit lassen sie den Trade aus. Die festen Datensammler bleiben ungefiltert (Kontrollgruppe).
 
@@ -158,33 +160,43 @@ def seed_from_backtests(*, datadir: Path, data_source: str, user_data: Path | No
     pairs = [p for p in project.get("learning_pairs", project["allowed_pairs"])
              if all((datadir / f"{p.replace('/', '_')}-{tf}.parquet").exists() for tf in ("1h", "1d"))
              ] or project["allowed_pairs"]
-    ft = load_freqtrade_config()
-    ft["exchange"] = {**ft["exchange"], "pair_whitelist": pairs}
-    tmp_cfg = Path(tempfile.mkdtemp()) / "seed-config.json"
-    tmp_cfg.write_text(json.dumps(ft), encoding="utf-8")
     daily = {s for s in fleet if s in project["evaluation"].get("daily_strategies", [])}
     rows = []
-    for tf, strategies in (("1h", sorted(fleet - daily)), ("1d", sorted(daily))):
-        if not strategies:
-            continue
-        try:
-            res = run_freqtrade_backtest(strategies=strategies, timeframe=tf, timerange=None, datadir=datadir,
-                                         data_source=data_source, offline=offline, registry=None,
-                                         results_dir=None, config_path=tmp_cfg)
-        except Exception as e:  # noqa: BLE001 – z. B. zu wenig Tageskerzen: übrige Zeitintervalle trotzdem nutzen
-            log.warning("Startwissen %s nicht erzeugt: %s", tf, e)
-            continue
+    # Je Markt ein eigener Lauf: Positionslimits (max. 2 offene Trades) sollen nicht Märkte gegeneinander verdrängen –
+    # fürs Gedächtnis zählt jede Situation, in der eine Strategie eingestiegen wäre.
+    for pair in pairs:
+        ft = load_freqtrade_config()
+        ft["exchange"] = {**ft["exchange"], "pair_whitelist": [pair]}
+        tmp_cfg = Path(tempfile.mkdtemp()) / "seed-config.json"
+        tmp_cfg.write_text(json.dumps(ft), encoding="utf-8")
+        for tf, strategies in (("1h", sorted(fleet - daily)), ("1d", sorted(daily))):
+            if not strategies:
+                continue
+            try:
+                res = run_freqtrade_backtest(strategies=strategies, timeframe=tf, timerange=None, datadir=datadir,
+                                             data_source=data_source, offline=offline, registry=None,
+                                             results_dir=None, config_path=tmp_cfg)
+            except Exception as e:  # noqa: BLE001 – z. B. zu wenig Tageskerzen: übrige Läufe trotzdem nutzen
+                log.warning("Startwissen %s %s nicht erzeugt: %s", pair, tf, e)
+                continue
+            rows += _trade_rows(res)
+    df = pd.DataFrame(rows)
+    out = memory_dir(user_data)
+    out.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out / "history_trades.parquet", index=False)
+    return len(df)
+
+
+def _trade_rows(res: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    if res:
         for s, r in res["strategies"].items():
             for t in r["trades"]:
                 rows.append({"pair": t["pair"], "open_date": t["open_date"], "close_date": t["close_date"],
                              "close_profit": t["profit_ratio"], "close_profit_abs": t["profit_abs"],
                              "stake_amount": t["stake_amount"], "exit_reason": t["exit_reason"],
                              "bot": "backtest", "round": "historisch", "source": "backtest", "strategy": s})
-    df = pd.DataFrame(rows)
-    out = memory_dir(user_data)
-    out.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out / "history_trades.parquet", index=False)
-    return len(df)
+    return rows
 
 
 def build_memory(user_data: Path | None = None, fetch: Callable | None = None) -> pd.DataFrame:
@@ -223,32 +235,184 @@ def _design(df: pd.DataFrame, columns: list[str] | None = None) -> pd.DataFrame:
     return x
 
 
-def _fit(x: pd.DataFrame, y: pd.Series):
-    from sklearn.ensemble import HistGradientBoostingClassifier
+# Lernmethode (Wunsch Burak: „die beste aktuelle Methode“): Für tabellarische Daten dieser Größe (einige Tausend Trades,
+# wenige Merkmale) gelten Gradient-Boosting-Verfahren (LightGBM, XGBoost) als Stand der Technik. Dazu: automatische
+# Suche nach Einstellungen, Walk-Forward-Validierung über mehrere Zeitabschnitte und ein Ensemble der besten Varianten.
+MODEL_VARIANTS: dict[str, dict[str, Any]] = {
+    "vorsichtig (flache Bäume)": {"kind": "hgb", "max_depth": 2, "max_iter": 60, "min_samples_leaf": 40},
+    "Wald (Random Forest)": {"kind": "rf"},
+    "linear (logistische Regression)": {"kind": "logreg"},
+}
+N_RANDOM_CONFIGS = 12
+THRESHOLD_FACTORS = (1.0, 1.1, 1.25)
+MIN_KEPT_SHARE = 0.1
+WALK_FORWARD_CUTS = (0.5, 0.6, 0.7)  # Anteile des Lernabschnitts: lernen bis Schnitt, prüfen auf den nächsten 10 %
+ENSEMBLE_SIZE = 3
 
-    # Bewusst vorsichtig (flache Bäume, große Blätter, wenige Runden): Marktdaten sind verrauscht, sonst lernt
-    # das Modell Zufallsmuster auswendig.
-    return HistGradientBoostingClassifier(max_depth=2, max_iter=60, learning_rate=0.05, min_samples_leaf=40,
-                                          l2_regularization=1.0, random_state=42).fit(x, y)
+
+def _variants(seed: int = 42) -> dict[str, dict[str, Any]]:
+    """Feste Varianten + zufällige LightGBM-/XGBoost-Einstellungen (reproduzierbar)."""
+    rng = np.random.default_rng(seed)
+    out = dict(MODEL_VARIANTS)
+    for i in range(N_RANDOM_CONFIGS):
+        kind = "lgbm" if i % 2 == 0 else "xgb"
+        out[f"{'LightGBM' if kind == 'lgbm' else 'XGBoost'} #{i // 2 + 1}"] = {
+            "kind": kind, "max_depth": int(rng.integers(2, 6)), "n_estimators": int(rng.integers(50, 400)),
+            "learning_rate": float(rng.choice([0.01, 0.03, 0.05, 0.1])),
+            "min_child": int(rng.choice([10, 20, 40, 80])), "subsample": float(rng.choice([0.6, 0.8, 1.0])),
+            "colsample": float(rng.choice([0.6, 0.8, 1.0])), "reg_lambda": float(rng.choice([0.0, 1.0, 5.0]))}
+    return out
+
+
+def _permutation_auc_drop(m, x: pd.DataFrame, y: pd.Series, repeats: int = 5, seed: int = 42) -> dict[str, float]:
+    """Wichtigkeit je Merkmal: wie stark sinkt die Trennschärfe (AUC), wenn man die Spalte zufällig mischt."""
+    from sklearn.metrics import roc_auc_score
+
+    if y.nunique() < 2:
+        return {c: 0.0 for c in x.columns}
+    rng = np.random.default_rng(seed)
+    base = roc_auc_score(y, _proba(m, x))
+    out = {}
+    for col in x.columns:
+        drops = []
+        for _ in range(repeats):
+            xs = x.copy()
+            xs[col] = rng.permutation(xs[col].to_numpy())
+            drops.append(base - roc_auc_score(y, _proba(m, xs)))
+        out[col] = float(np.mean(drops))
+    return out
+
+
+class Ensemble:
+    """Mittelwert der Wahrscheinlichkeiten mehrerer Modelle (robuster als ein einzelnes)."""
+
+    def __init__(self, models: list):
+        self.models = models
+
+    def predict_proba(self, x):
+        p = np.mean([m.predict_proba(x)[:, 1] for m in self.models], axis=0)
+        return np.column_stack([1 - p, p])
+
+
+def _fit(x: pd.DataFrame, y: pd.Series, variant: str | dict = "vorsichtig (flache Bäume)"):
+    from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    v = variant if isinstance(variant, dict) else _variants()[variant]
+    if v["kind"] == "hgb":
+        m = HistGradientBoostingClassifier(max_depth=v["max_depth"], max_iter=v["max_iter"], learning_rate=0.05,
+                                           min_samples_leaf=v["min_samples_leaf"], l2_regularization=1.0,
+                                           random_state=42)
+    elif v["kind"] == "rf":
+        m = RandomForestClassifier(n_estimators=200, min_samples_leaf=30, max_features="sqrt", n_jobs=2,
+                                   random_state=42)
+    elif v["kind"] == "lgbm":
+        from lightgbm import LGBMClassifier
+
+        m = LGBMClassifier(max_depth=v["max_depth"], n_estimators=v["n_estimators"], learning_rate=v["learning_rate"],
+                           min_child_samples=v["min_child"], subsample=v["subsample"], subsample_freq=1,
+                           colsample_bytree=v["colsample"], reg_lambda=v["reg_lambda"], random_state=42,
+                           n_jobs=2, verbose=-1)
+    elif v["kind"] == "xgb":
+        from xgboost import XGBClassifier
+
+        m = XGBClassifier(max_depth=v["max_depth"], n_estimators=v["n_estimators"], learning_rate=v["learning_rate"],
+                          min_child_weight=v["min_child"] / 10, subsample=v["subsample"],
+                          colsample_bytree=v["colsample"], reg_lambda=v["reg_lambda"], random_state=42,
+                          n_jobs=2, verbosity=0)
+    else:
+        m = make_pipeline(StandardScaler(), LogisticRegression(C=0.5, max_iter=2000))
+    return m.fit(x.fillna(0.0), y)
+
+
+def _fit_ensemble(x: pd.DataFrame, y: pd.Series, names: list[str]):
+    models = [_fit(x, y, n) for n in names]
+    return models[0] if len(models) == 1 else Ensemble(models)
+
+
+def _proba(m, x: pd.DataFrame):
+    return m.predict_proba(x.fillna(0.0))[:, 1]
+
+
+def _avg_profit(df: pd.DataFrame, mask) -> float | None:
+    return float(df.loc[mask, "close_profit"].astype(float).mean()) if mask.any() else None
+
+
+def experiment(memory: pd.DataFrame) -> dict[str, Any]:
+    """Die KI probiert täglich viele Modelle, Einstellungen und Schwellen aus (Experimente auf den Bot-Daten).
+
+    Ausgewählt wird per Walk-Forward nur auf den älteren 80 % (mehrere Zeitabschnitte: lernen bis Schnitt, prüfen auf den
+    folgenden 10 %). Die jüngsten 20 % bleiben für die ehrliche Messung danach unberührt – sonst würde das Ausprobieren
+    selbst zum Auswendiglernen. Gewinnt keine Variante gegen „alle Trades zulassen“, bleibt der Filter aus.
+    """
+    n = len(memory)
+    dev = memory.iloc[: int(n * (1 - HOLDOUT_SHARE))]
+    m_dev = len(dev)
+    folds = []
+    for c in WALK_FORWARD_CUTS:
+        a, b = int(m_dev * c), int(m_dev * (c + 0.1)) if c < WALK_FORWARD_CUTS[-1] else m_dev
+        tr, va = dev.iloc[:a], dev.iloc[a:b]
+        if tr["win"].nunique() > 1 and len(va):
+            folds.append((tr, va))
+    tried = []
+    for name in _variants():
+        per_factor: dict[float, list] = {f: [] for f in THRESHOLD_FACTORS}
+        for tr, va in folds:
+            x_tr = _design(tr)
+            p = _proba(_fit(x_tr, tr["win"], name), _design(va, list(x_tr.columns)))
+            base = float(tr["win"].mean())
+            avg_all = float(va["close_profit"].astype(float).mean())
+            for f in THRESHOLD_FACTORS:
+                keep = p >= base * f
+                kept = _avg_profit(va, keep)
+                per_factor[f].append((float(keep.mean()), None if kept is None else kept - avg_all))
+        for f, res in per_factor.items():
+            if not res:
+                continue
+            share = float(np.mean([r[0] for r in res]))
+            gains = [r[1] for r in res if r[1] is not None]
+            tried.append({"Variante": name, "Schwelle": f"{f:.2f}× Gewinnquote", "factor": f,
+                          "behalten": round(share, 3),
+                          "Vorteil je Trade (Walk-Forward)": round(float(np.mean(gains)), 5) if gains else None,
+                          "Abschnitte besser": sum(g > 0 for g in gains)})
+    ok = [t for t in tried if t["behalten"] >= MIN_KEPT_SHARE and t["Vorteil je Trade (Walk-Forward)"] is not None]
+    ok.sort(key=lambda t: t["Vorteil je Trade (Walk-Forward)"], reverse=True)
+    top = []
+    for t in ok:  # Ensemble aus den besten, je Variante höchstens einmal
+        if t["Variante"] not in [x["Variante"] for x in top]:
+            top.append(t)
+        if len(top) == ENSEMBLE_SIZE:
+            break
+    best = top[0] if top else None
+    # Filter nur einschalten, wenn der Gewinner im Mittel UND in der Mehrheit der Abschnitte besser war.
+    use_filter = bool(best and best["Vorteil je Trade (Walk-Forward)"] > 0
+                      and best["Abschnitte besser"] > len(folds) / 2)
+    return {"tried": tried, "best": best, "ensemble": [t["Variante"] for t in top], "use_filter": use_filter,
+            "folds": len(folds), "n_variants": len(_variants())}
 
 
 def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, registry=None) -> dict[str, Any]:
-    """Prüftraining auf den älteren 80 %, Messung auf den jüngsten 20 %; danach Modell auf allem für den Einsatz."""
+    """Experimente auswählen, auf den jüngsten 20 % ehrlich messen, dann Gewinner auf allem trainieren und einsetzen."""
     import joblib
-    from sklearn.inspection import permutation_importance
     from sklearn.metrics import roc_auc_score
 
     n = len(memory)
     if n < MIN_TRADES_TO_TRAIN:
         return {"trained": False, "reason": f"zu wenig Trades im Gedächtnis ({n} < {MIN_TRADES_TO_TRAIN})"}
+    exp = experiment(memory)
+    names = exp["ensemble"] or ["vorsichtig (flache Bäume)"]
+    variant = " + ".join(names)
+    factor = exp["best"]["factor"] if exp["best"] else 1.0
     cut = int(n * (1 - HOLDOUT_SHARE))
     train, hold = memory.iloc[:cut], memory.iloc[cut:]
     x_tr = _design(train)
     x_ho = _design(hold, list(x_tr.columns))
-    m = _fit(x_tr, train["win"])
-    p = m.predict_proba(x_ho)[:, 1]
+    m = _fit_ensemble(x_tr, train["win"], names)
+    p = _proba(m, x_ho)
     base_rate = float(train["win"].mean())
-    allow = p >= base_rate
+    allow = p >= base_rate * factor
     acc = float(((p >= 0.5).astype(int) == hold["win"]).mean())
     naive_acc = float((hold["win"] == int(base_rate >= 0.5)).mean())
     try:
@@ -256,9 +420,8 @@ def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, regi
     except ValueError:
         auc = None
     avg_all = float(hold["close_profit"].astype(float).mean())
-    avg_kept = float(hold.loc[allow, "close_profit"].astype(float).mean()) if allow.any() else None
-    imp = permutation_importance(m, x_ho, hold["win"], n_repeats=5, random_state=42)
-    raw = dict(zip(x_ho.columns, imp.importances_mean))
+    avg_kept = _avg_profit(hold, allow)
+    raw = _permutation_auc_drop(m, x_ho, hold["win"])
     grouped: dict[str, float] = {}
     for col, v in raw.items():
         key = col.split("_", 1)[0] if col.startswith(("strategy_", "pair_")) else col
@@ -266,22 +429,37 @@ def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, regi
     metrics = {"accuracy": round(acc, 4), "naive_accuracy": round(naive_acc, 4),
                "auc": None if auc is None else round(auc, 4), "win_rate_holdout": round(float(hold["win"].mean()), 4),
                "avg_profit_all": round(avg_all, 5), "avg_profit_kept": None if avg_kept is None else round(avg_kept, 5),
-               "kept_share": round(float(allow.mean()), 4), "threshold": round(base_rate, 4),
+               "kept_share": round(float(allow.mean()), 4), "threshold": round(base_rate * factor, 4),
                "holdout_from": str(hold["close_date"].iloc[0]), "holdout_to": str(hold["close_date"].iloc[-1]),
-               "paper_trades": int((memory["source"] == "paper").sum())}
-    final = _fit(_design(memory), memory["win"])
+               "paper_trades": int((memory["source"] == "paper").sum()),
+               "experiments": len(exp["tried"]), "variants": exp["n_variants"], "winner": variant,
+               "winner_factor": factor,
+               "filter_active": exp["use_filter"]}
+    final = _fit_ensemble(_design(memory), memory["win"], names)
     out = memory_dir(user_data)
     out.mkdir(parents=True, exist_ok=True)
     model_file = out / f"filter-{datetime.now(UTC):%Y%m%d-%H%M%S}.joblib"
-    joblib.dump({"model": final, "columns": list(_design(memory).columns),
-                 "threshold": float(memory["win"].mean())}, model_file)
+    # Hat im Experiment keine Variante „alle Trades zulassen“ geschlagen, lässt der Filter alles durch (Schwelle 0).
+    threshold = float(memory["win"].mean()) * factor if exp["use_filter"] else 0.0
+    joblib.dump({"model": final, "columns": list(_design(memory).columns), "threshold": threshold,
+                 "variant": variant}, model_file)
     (out / "filter-latest.json").write_text(json.dumps({"model_file": model_file.name}), encoding="utf-8")
+    (out / "experiments-latest.json").write_text(json.dumps(exp, default=str), encoding="utf-8")
     importances = dict(sorted(grouped.items(), key=lambda kv: -kv[1]))
     if registry is not None:
         registry.insert("ai_filter_versions", {"n_trades": n, "n_holdout": len(hold), "metrics": json.dumps(metrics),
                                                "importances": json.dumps(importances), "model_file": model_file.name})
     return {"trained": True, "n_trades": n, "metrics": metrics, "importances": importances,
-            "model_file": str(model_file)}
+            "model_file": str(model_file), "experiments": exp}
+
+
+def latest_experiments(user_data: Path | None = None) -> dict[str, Any] | None:
+    """Ergebnis der jüngsten Experimentrunde (für die Übersicht), oder None."""
+    p = memory_dir(user_data) / "experiments-latest.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+    except ValueError:
+        return None
 
 
 # --- Anwenden (im Paper-Bot) ------------------------------------------------------------------------------------------
@@ -309,7 +487,7 @@ def allow_entry(*, strategy: str, pair: str, when: Any, user_data: Path | None =
         return True, None
     row = pd.DataFrame([{**f, "strategy": strategy, "pair": pair}])
     x = _design(row, _cache["bundle"]["columns"])
-    p = float(_cache["bundle"]["model"].predict_proba(x)[:, 1][0])
+    p = float(_proba(_cache["bundle"]["model"], x)[0])
     return p >= _cache["bundle"].get("threshold", 0.5), p
 
 

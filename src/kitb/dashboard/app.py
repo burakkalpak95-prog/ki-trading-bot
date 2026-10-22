@@ -51,6 +51,9 @@ def simple_overview() -> None:
     ids = started or ids
     bot = st.selectbox("Welcher Bot?", ids, key="overview_bot") if len(ids) > 1 else ids[0]
     ft = load_freqtrade_config()
+    info = D.bot_info(bot)
+    st.markdown(f"**{bot}** · {info['kind']} · Strategie `{info['strategy']}` · Märkte: {', '.join(p.split('/')[0] for p in info['pairs'])}")
+    st.caption(info["description"])
     o = D.overview(bot, ft["dry_run_wallet"], fetch=_daily, exchange_id=ft["exchange"]["name"])
     if o["kill_switch"]:
         st.error("🛑 Not-Stopp ist aktiv – der Bot kauft nichts mehr.")
@@ -78,6 +81,13 @@ def simple_overview() -> None:
             st.write(("✅ " if pair in held else "⏸️ ") + D.explain_market(pair, m, pair in held))
     if o["fetch_error"]:
         st.caption(f"Aktuelle Kurse nicht abrufbar ({o['fetch_error']}).")
+
+    events = D.recent_events(bot)
+    st.subheader("Letzte Ereignisse dieses Bots")
+    if events:
+        st.code("\n".join(events), language=None)
+    else:
+        st.write("Noch keine – der Bot wartet auf sein erstes Signal.")
 
     st.subheader("Offene Positionen")
     if o["positions"]:
@@ -136,6 +146,7 @@ def learned_page() -> None:
     if prog["first"] is None:
         st.info("Die KI hat noch nicht trainiert. Das passiert einmal täglich kurz nach Tagesschluss, sobald das "
                 f"Gedächtnis mindestens {ai_memory.MIN_TRADES_TO_TRAIN} abgeschlossene Trades enthält.")
+        ai_activity()
         return
     last = prog["last"]
     st.markdown(f"### {prog['verdict']}")
@@ -166,6 +177,39 @@ def learned_page() -> None:
                "einzelne Ausschläge sind normal. Aussagekräftig ist der Trend über Wochen.")
     with st.expander("Alle Versionen"):
         st.dataframe(prog["versions"], hide_index=True, width="stretch")
+    ai_activity()
+
+
+def ai_activity() -> None:
+    """Was die KI gerade tut: heutige Experimente, Filter an/aus, jüngste Filter-Entscheidungen, nächstes Training."""
+    from kitb import ai_memory
+
+    st.subheader("Was die KI gerade macht")
+    exp = ai_memory.latest_experiments()
+    nxt = pd.Timestamp.now(tz="UTC").normalize() + pd.Timedelta(minutes=30)
+    if nxt <= pd.Timestamp.now(tz="UTC"):
+        nxt += pd.Timedelta(days=1)
+    st.write(f"Nächstes Training: **{nxt:%d.%m. %H:%M} UTC** (deutsche Sommerzeit +2 Std.)")
+    if exp:
+        best = exp.get("best") or {}
+        a, b, c = st.columns(3)
+        a.metric("Ausprobierte Lernmethoden", f"{exp.get('n_variants', 0)}",
+                 f"{len(exp.get('tried', []))} Versuche mit Schwellen", delta_color="off")
+        b.metric("Gewinner", best.get("Variante", "–"),
+                 help="Bester Vorteil je Trade im Walk-Forward auf älteren Daten; eingesetzt wird ein Mittel der besten 3.")
+        c.metric("KI-Filter", "AN" if exp.get("use_filter") else "AUS (lässt alles durch)",
+                 help="An nur, wenn der Gewinner im Mittel und in der Mehrheit der Zeitabschnitte besser war als ‚alle Trades‘.")
+        with st.expander("Alle heutigen Experimente"):
+            t = pd.DataFrame(exp.get("tried", [])).drop(columns=["factor"], errors="ignore")
+            if not t.empty:
+                t = t.sort_values("Vorteil je Trade (Walk-Forward)", ascending=False, na_position="last")
+            st.dataframe(t, hide_index=True, width="stretch")
+    dec = D.ai_filter_decisions()
+    st.write("**Jüngste Entscheidungen des KI-Filters** (Bots mit „_ki“)")
+    if dec.empty:
+        st.caption("Noch keine – die _ki-Bots haben noch kein Kaufsignal geprüft.")
+    else:
+        st.dataframe(dec, hide_index=True, width="stretch")
 
 
 with learned_tab:

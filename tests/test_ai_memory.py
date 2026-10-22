@@ -107,3 +107,13 @@ def test_low_win_rate_strategies_are_not_all_rejected(home):
     pd.DataFrame(rows).to_parquet(out / "history_trades.parquet", index=False)
     res = ai_memory.daily(registry=None, fetch=lambda ex, pair, limit=1000: d)
     assert res["metrics"]["kept_share"] > 0.05 and res["metrics"]["avg_profit_kept"] > res["metrics"]["avg_profit_all"]
+
+
+def test_experiments_try_many_methods_and_report_winner(home):
+    d = _history(home)
+    res = ai_memory.daily(registry=None, fetch=lambda ex, pair, limit=1000: d)
+    m = res["metrics"]
+    assert m["variants"] >= 10 and m["experiments"] >= m["variants"] and m["winner"]
+    assert isinstance(m["filter_active"], bool) and m["filter_active"]  # klares Muster -> Filter lohnt sich
+    exp = ai_memory.latest_experiments()
+    assert exp and exp["tried"] and exp["best"]["Variante"] in m["winner"]

@@ -158,6 +158,8 @@ Nächste Entscheidung des Bots jeweils nach Tagesschluss 00:00 UTC. PC und Docke
 7 Datensammler-Strategien + 7 Kopien mit KI-Filter, KI-Gedächtnis mit täglichem Lernlauf und Seite „Was hat die KI
 gelernt?“. Lern-/Sammler-Bots beginnen bei Verlustlimit eine neue Runde mit 10.000 USDT statt den globalen Not-Stopp
 auszulösen. Ob die KI dadurch besser wird, ist offen (Weiß ich nicht) – die Seite misst es auf ungesehenen Trades.
+Seit 22.10. abends: tägliche Experimente mit ~15 Lernmethoden (Walk-Forward, Ensemble der besten 3, Filter nur bei
+nachgewiesenem Vorteil); Startwissen aus Backtests je Coin einzeln. Anzeige „Was die KI gerade macht“.
 Tests (Cloud-venv): 184 bestanden.
 
 ## Erreichte Datenquellen (22.10.2026)

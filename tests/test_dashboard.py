@@ -131,3 +131,24 @@ def test_overview_preselects_bot_that_ran(home):
     assert D.ever_started("trend_d1") and not D.ever_started("bot_a")
     at = _run_app()
     assert not at.selectbox or at.selectbox[0].options == ["trend_d1"]
+
+
+def test_bot_info_and_events_differ_per_bot(home):
+    a, b = D.bot_info("trend_d1"), D.bot_info("donchian_1h_ki")
+    assert a["pairs"] == ["BTC/USDT", "ETH/USDT"] and len(b["pairs"]) > 2 and "KI-Filter" in b["kind"]
+    log = home / "paper" / "donchian_1h_ki" / "freqtrade.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("2026-10-22 23:00:00,000 - kitb.risk - INFO - KI-Filter SOL/USDT: Gewinnchance 21% -> ausgelassen\n"
+                   "2026-10-22 23:00:01,000 - freqtrade - INFO - Bot heartbeat. PID=1\n")
+    ev = D.recent_events("donchian_1h_ki")
+    assert len(ev) == 1 and "ausgelassen" in ev[0] and D.recent_events("trend_d1") == []
+
+
+def test_ai_filter_decisions_from_ki_bot_logs(home):
+    log = home / "paper" / "momentum_d1_ki" / "freqtrade.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("2026-10-22 23:43:01,123 - kitb.risk - INFO - KI-Filter BTC/USDT: Gewinnchance 22% -> ausgelassen\n"
+                   "2026-10-22 23:44:01,123 - kitb.risk - INFO - KI-Filter ETH/USDT: Gewinnchance 61% -> erlaubt\n",
+                   encoding="utf-8")
+    df = D.ai_filter_decisions()
+    assert list(df["Markt"]) == ["ETH/USDT", "BTC/USDT"] and list(df["Entscheidung"]) == ["erlaubt", "ausgelassen"]

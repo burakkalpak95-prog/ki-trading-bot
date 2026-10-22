@@ -68,7 +68,8 @@ def cmd_download(args) -> int:
     if proc.returncode != 0:
         return proc.returncode
     _trim_incomplete(datadir, pairs, args.timeframes or project["timeframes"])
-    return _validate_dir(datadir, args.exchange, args.timeframes or project["timeframes"], live_check=True)
+    return _validate_dir(datadir, args.exchange, args.timeframes or project["timeframes"], live_check=True,
+                         pairs=pairs)
 
 
 def _trim_incomplete(datadir: Path, pairs: list[str], timeframes: list[str]) -> None:
@@ -101,7 +102,8 @@ def cmd_synthetic(args) -> int:
     return 0
 
 
-def _validate_dir(datadir: Path, source: str, timeframes: list[str], live_check: bool) -> int:
+def _validate_dir(datadir: Path, source: str, timeframes: list[str], live_check: bool,
+                  pairs: list[str] | None = None) -> int:
     from kitb.data.storage import load_ohlcv_raw
     from kitb.data.validate import validate_ohlcv
 
@@ -109,7 +111,7 @@ def _validate_dir(datadir: Path, source: str, timeframes: list[str], live_check:
     reg = Registry(paths.REGISTRY_DB)
     now = pd.Timestamp.now(tz="UTC") if live_check else None
     all_ok = True
-    for pair in project["allowed_pairs"]:
+    for pair in pairs or project["allowed_pairs"]:
         for tf in timeframes:
             df = load_ohlcv_raw(datadir, pair, tf)
             rep = validate_ohlcv(df, pair, tf, source, now=now,

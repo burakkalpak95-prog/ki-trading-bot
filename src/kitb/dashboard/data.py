@@ -1,6 +1,7 @@
 """Datenzugriff fürs Dashboard (ohne Streamlit, dadurch testbar). Nur lesend – außer Not-Stopp."""
 
 import json
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -149,7 +150,7 @@ def overview(bot: str, starting_balance: float, user_data: Path | None = None,
 
     log_age = paper._log_age_seconds(bot, user_data)
     trades = paper_trades(bot, user_data)
-    pairs = load_project_config()["allowed_pairs"]
+    pairs = bot_info(bot)["pairs"]
     markets, dailies, fetch_error = {}, {}, None
     for pair in pairs:
         try:
@@ -313,3 +314,55 @@ def fleet_table(starting_balance: float, user_data: Path | None = None) -> pd.Da
                      "Ergebnis Runde (%)": round(pnl / starting_balance, 4),
                      "Ergebnis alle Runden (USDT)": round(pnl + past, 2)})
     return pd.DataFrame(rows)
+
+
+def bot_info(bot: str) -> dict[str, Any]:
+    """Art, Strategie, Beschreibung und Märkte eines Paper-Bots (Sammler/KI-Bots lernen auf mehr Märkten)."""
+    project = load_project_config()
+    spec = project.get("paper_strategies", {}).get(bot) or project["bots"].get(bot, {})
+    mode = spec.get("mode") or "learning"
+    pairs = project.get("learning_pairs") if mode in ("explore", "learning") else None
+    kind = {"candidate": "Kandidat (feste Regel)", "explore": "Datensammler",
+            "learning": "KI-Bot (lernt täglich neu)"}[mode] + (" + KI-Filter" if spec.get("ai_filter") else "")
+    return {"kind": kind, "strategy": spec.get("strategy", ""), "description": spec.get("description", ""),
+            "pairs": list(pairs or project["allowed_pairs"])}
+
+
+_LOG_KEYS = ("KI-Filter", "Risikomodul", "Verlustlimit", "Long signal", "entry", "Exit", "exit", "Done training",
+             "Not-Stopp")
+
+
+def recent_events(bot: str, n: int = 8, user_data: Path | None = None) -> list[str]:
+    """Die letzten relevanten Zeilen aus dem Freqtrade-Log des Bots (Signale, Filter, Risiko, Training)."""
+    log = (user_data or paths.USER_DATA) / "paper" / bot / "freqtrade.log"
+    if not log.exists():
+        return []
+    with log.open("rb") as f:
+        f.seek(max(0, log.stat().st_size - 200_000))
+        lines = f.read().decode("utf-8", errors="replace").splitlines()
+    hits = [ln for ln in lines if any(k in ln for k in _LOG_KEYS) and "heartbeat" not in ln]
+    return [ln[:19] + "  " + ln.split(" - ", 3)[-1][:160] for ln in hits[-n:]][::-1]
+
+
+_FILTER_RE = re.compile(r"KI-Filter (\S+): Gewinnchance (\S+) -> (\w+)")
+
+
+def ai_filter_decisions(n: int = 30, user_data: Path | None = None) -> pd.DataFrame:
+    """Jüngste Entscheidungen des KI-Filters aus den Logs aller Bots mit ai_filter (neueste zuerst)."""
+    rows = []
+    for bot, spec in load_project_config().get("paper_strategies", {}).items():
+        if not spec.get("ai_filter"):
+            continue
+        log = (user_data or paths.USER_DATA) / "paper" / bot / "freqtrade.log"
+        if not log.exists():
+            continue
+        with log.open("rb") as f:
+            f.seek(max(0, log.stat().st_size - 500_000))
+            lines = f.read().decode("utf-8", errors="replace").splitlines()
+        for ln in lines:
+            m = _FILTER_RE.search(ln)
+            if m:
+                rows.append({"Zeit (UTC)": ln[:19], "Bot": bot, "Markt": m.group(1), "Gewinnchance": m.group(2),
+                             "Entscheidung": m.group(3)})
+    df = pd.DataFrame(rows, columns=["Zeit (UTC)", "Bot", "Markt", "Gewinnchance", "Entscheidung"])
+    return df.sort_values("Zeit (UTC)", ascending=False).head(n).reset_index(drop=True)

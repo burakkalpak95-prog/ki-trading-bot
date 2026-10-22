@@ -202,3 +202,13 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - **Breit lernen, eng handeln** (Freigabe Burak, 22.10.2026): `learning_pairs` (BTC, ETH + SOL, XRP, BNB, ADA, DOGE, LINK)
   gelten nur für Paper-Bots im Modus explore/learning und für Backtests des KI-Gedächtnisses. Kandidaten (trend_d1) und
   alles darüber hinaus bleiben bei `allowed_pairs` (BTC/ETH); die Sicherheitsprüfung unterscheidet das je Modus.
+- **Experimente der KI** („die KI darf alles, die Bots haben feste Regeln“, Burak 22.10.2026): Die Regeln der Bots
+  bleiben fest. Die KI probiert täglich ~15 Lernmethoden (gradient-geboostete Bäume HistGradientBoosting/LightGBM/
+  XGBoost mit zufälliger Hyperparameter-Suche, Random Forest, logistische Regression) × 3 Schwellen aus. Ausgewählt
+  wird per Walk-Forward nur auf den älteren 80 % (3 Zeitabschnitte); die jüngsten 20 % bleiben für die ehrliche
+  Messung unberührt. Eingesetzt wird ein Mittel der besten 3. Der Filter ist nur aktiv, wenn der Gewinner im Mittel UND
+  in der Mehrheit der Abschnitte besser war als „alle Trades zulassen“; sonst lässt er alles durch. Begründung der
+  Methodenwahl: Für tabellarische Daten dieser Größe gelten gradient-geboostete Bäume als starker Standard; Deep
+  Learning/Reinforcement Learning würde bei wenigen tausend Trades eher Rauschen auswendig lernen (Unsicher: kein
+  eigener Vergleich auf diesen Daten). Ergebnis jeder Runde in `ai_memory/experiments-latest.json`, sichtbar im
+  Dashboard unter „Was die KI gerade macht“ (inkl. jüngster Filter-Entscheidungen aus den Logs der _ki-Bots).
