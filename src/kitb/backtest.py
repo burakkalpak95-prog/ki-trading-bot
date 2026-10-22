@@ -22,7 +22,7 @@ from kitb.data.synthetic import is_synthetic_dir
 from kitb.data.validate import validate_ohlcv
 from kitb.offline import offline_markets
 from kitb.registry import Registry
-from kitb.safety import assert_run_mode_allowed, assert_safe_freqtrade_config
+from kitb.safety import SafetyError, assert_run_mode_allowed, assert_safe_freqtrade_config
 
 log = logging.getLogger(__name__)
 MIN_TRADES_FOR_STATS = 30
@@ -102,6 +102,9 @@ def run_freqtrade_backtest(
     results_dir: Path | None,
     config_path: Path | None,
     extra_metrics: dict[str, Any] | None = None,
+    extra_config_files: list[Path] | None = None,
+    extra_argv: list[str] | None = None,
+    user_data_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Ein Freqtrade-Lauf für eine oder mehrere Strategien unter identischen Bedingungen."""
     assert_run_mode_allowed("backtest")
@@ -137,8 +140,13 @@ def run_freqtrade_backtest(
 
     results_dir = results_dir or paths.RESULTS_DIR
     results_dir.mkdir(parents=True, exist_ok=True)
+    for extra in extra_config_files or []:
+        overlay = load_freqtrade_config(extra)
+        if set(overlay) - {"freqai"}:
+            raise SafetyError(f"Zusatzkonfiguration {extra} darf nur 'freqai' enthalten.")
     argv = [
-        "backtesting", "-c", str(config_path), "--userdir", str(paths.USER_DATA),
+        "backtesting", "-c", str(config_path), *[a for e in extra_config_files or [] for a in ("-c", str(e))],
+        "--userdir", str(user_data_dir or paths.USER_DATA),
         "--datadir", str(datadir), "--strategy-list", *strategies,
         "--strategy-path", str(paths.USER_DATA / "strategies"), "--timeframe", timeframe,
         "--fee", str(cost_model.effective_fee_per_side), "--export", "trades",
@@ -147,6 +155,7 @@ def run_freqtrade_backtest(
     ]
     if timerange:
         argv += ["--timerange", timerange]
+    argv += extra_argv or []
     args = Arguments(argv).get_parsed_arg()
     with offline_markets() if offline else nullcontext():
         start_backtesting(args)

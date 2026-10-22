@@ -1,5 +1,5 @@
-# Reproduzierbare Laufzeit: offizielles Freqtrade-Image (Version fest gepinnt) + kitb-Paket.
-FROM freqtradeorg/freqtrade:2026.9
+# Reproduzierbare Laufzeit: offizielles Freqtrade-FreqAI-Image (Version fest gepinnt, enthält scikit-learn, LightGBM, XGBoost) + kitb-Paket.
+FROM freqtradeorg/freqtrade:2026.9_freqai
 
 USER root
 COPY pyproject.toml constraints.txt /opt/kitb/

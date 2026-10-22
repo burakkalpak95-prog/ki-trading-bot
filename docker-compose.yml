@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: kitb:phase1
+    image: kitb:local
     volumes:
       - ./config:/kitb/config:ro
       - ./user_data:/kitb/user_data

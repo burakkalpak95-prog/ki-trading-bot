@@ -157,6 +157,17 @@ def cmd_compare(args) -> int:
     return 0
 
 
+def cmd_ml_compare(args) -> int:
+    from kitb.ml import ml_compare
+
+    datadir = paths.SYNTHETIC_DATA_DIR if args.source == "synthetic" else paths.DATA_DIR / args.source
+    report = ml_compare(datadir=datadir, data_source=args.source, include_test=args.include_test,
+                        offline=args.offline_markets, registry_path=paths.REGISTRY_DB)
+    print((Path(report["report_dir"]) / "report.md").read_text(encoding="utf-8"))
+    print(f"Bericht: {report['report_dir']}")
+    return 0
+
+
 def cmd_runs(args) -> int:
     _print(Registry(paths.REGISTRY_DB).fetch(args.table, args.limit))
     return 0
@@ -212,6 +223,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-windows", action="store_true", help="rollierende Fenster überspringen")
     s.add_argument("--offline-markets", action="store_true")
     s.set_defaults(func=cmd_compare)
+
+    s = sub.add_parser("ml-compare", help="Bot A vs. Bot B vs. Regel-Strategien (FreqAI, Walk-Forward)")
+    s.add_argument("--source", default="binance", help="Börsenname oder 'synthetic'")
+    s.add_argument("--include-test", action="store_true", help="unberührten Test-Abschnitt auswerten (protokolliert)")
+    s.add_argument("--offline-markets", action="store_true")
+    s.set_defaults(func=cmd_ml_compare)
 
     s = sub.add_parser("runs", help="Protokoll anzeigen")
     s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs"])
