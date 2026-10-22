@@ -191,3 +191,10 @@ Nächste Entscheidung des Bots jeweils nach Tagesschluss 00:00 UTC. PC und Docke
 Paper-Trading von DailyTrendSma mehrere Wochen bis Monate laufen lassen und regelmäßig mit `kitb paper status --bot trend_d1`
 und `kitb paper report` auswerten. Eine Tagesstrategie handelt selten; belastbare Aussagen brauchen lange Laufzeit.
 Live-Trading bleibt gesperrt (separate Freigabe und unabhängige Prüfung nötig).
+
+**Vorab festgelegter Bewertungsplan für das Paper-Trading (22.10.2026):**
+- Nach ca. 3 Monaten (Ende Jan. 2027): Zwischenbilanz – Stabilität (Ausfälle, Lücken), Backtest-Treue (gleicher Zeitraum
+  per Backtest nachrechnen, Trades müssen übereinstimmen), Rückgang ≤ ca. 10 %. Keine Aussage über Gewinn.
+- Nach 6–12 Monaten: Entscheidung „bewährt / unklar / verwerfen“ anhand Rendite und Rückgang im Vergleich zu Buy&Hold
+  (gleichgewichtet). Erst bei „bewährt“ überhaupt Diskussion über Live (Phase-8-Checkliste, separate Freigabe, kleiner Betrag).
+- Neue Strategie-Ideen nur auf Train/Validation entwickeln; der Test-Abschnitt ist verbraucht, neue Prüfung nur über Paper-Trading.
