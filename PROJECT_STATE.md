@@ -112,6 +112,25 @@ DailyTrendSma 53,8 % / 46,2 %. Train der Tagesstrategien beginnt wegen 200 Tagen
   Ordner). Kandidat gilt als robust, wenn dort gilt: Gewinn > 0, Profit Factor ≥ 1,2, Max DD ≤ 25 %, ≥ 15 Trades, und in
   mindestens 2 von 3 Einzeljahren Gewinn. Nur dann wird der Test-Abschnitt einmalig ausgewertet.
 
+## Vorperiode 2019–2021 (Binance, Daten 2018–2021, eigener Ordner)
+
+Buy&Hold gleichgewichtet: +1 915,8 %, Max DD 65,4 % (1d).
+
+| Strategie | Trades | Netto | Max DD | PF | p-Wert | Jahre mit Gewinn |
+|---|---:|---:|---:|---:|---:|---|
+| DailyMomentum (1d) | 48 | +231,65 % | 19,74 % | 4,85 | 0,125 | 3 von 3 (2019 +37 %, 2020 +46 %, 2021 +47 %) |
+| DailyTrendSma (1d) | 25 | +256,40 % | 6,12 % | 8,00 | 0,199 | 3 von 3 (2019 +13 %, 2020 +88 %, 2021 +38 %) |
+| BaselineEmaCross (1h, Vergleich) | 407 | +179,86 % | 10,03 % | 1,81 | 0,002 | – |
+
+**Vorab festgelegte Regel: beide Tagesstrategien bestehen** (Gewinn > 0, PF ≥ 1,2, DD ≤ 25 %, ≥ 15 Trades, ≥ 2 von 3 Jahren
+positiv). Einschränkungen: p-Werte 0,12–0,20 (kein statistischer Beleg), netto weit hinter Buy&Hold; der Vorteil liegt nur im
+Verhältnis Rendite/Drawdown. 1h-Daten 2018 mit Lücken (nur Vorlauf).
+
+**Nächster Schritt: einmalige Auswertung des Test-Abschnitts** (05.11.2025 – 22.10.2026) für DailyTrendSma und DailyMomentum.
+Vorab festgelegte Regel für den Test-Abschnitt: Gewinn > 0, Max DD ≤ 25 % und Rendite/DD höher als bei Buy&Hold im selben
+Abschnitt. Besteht eine Strategie, wird sie Kandidat für Paper-Trading (eigene Freigabe nötig); sonst wird keine Variante
+nachträglich angepasst und erneut am Test-Abschnitt geprüft.
+
 ## Erreichte Datenquellen (22.10.2026)
 
 | Quelle | Ergebnis |
