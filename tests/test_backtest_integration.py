@@ -31,7 +31,7 @@ def test_backtest_runs_and_is_reproducible(synth_dir, tmp_path):
     assert m["effective_fee_per_side"] == pytest.approx(0.0017)
     assert m["total_cost_abs_incl_slippage"] > 0
     assert m["synthetic_data"] is True
-    assert set(m["buy_and_hold"]) == {"BTC/USDT", "ETH/USDT"}
+    assert set(m["buy_and_hold"]) == {"BTC/USDT", "ETH/USDT", "equal_weight_net_return"}
     for key in ("profit_total", "max_drawdown_account", "profit_factor", "winrate", "total_trades", "exposure"):
         assert a["metrics"][key] == b["metrics"][key], key
     assert a["data_fingerprints"] == b["data_fingerprints"]

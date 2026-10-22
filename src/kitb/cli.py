@@ -144,6 +144,19 @@ def cmd_backtest(args) -> int:
     return 0
 
 
+def cmd_compare(args) -> int:
+    from kitb.compare import compare_strategies
+
+    datadir = paths.SYNTHETIC_DATA_DIR if args.source == "synthetic" else paths.DATA_DIR / args.source
+    report = compare_strategies(datadir=datadir, data_source=args.source, strategies=args.strategies,
+                                timeframe=args.timeframe, include_test=args.include_test,
+                                with_windows=not args.no_windows, offline=args.offline_markets,
+                                registry=Registry(paths.REGISTRY_DB))
+    print((Path(report["report_dir"]) / "report.md").read_text(encoding="utf-8"))
+    print(f"Bericht: {report['report_dir']}")
+    return 0
+
+
 def cmd_runs(args) -> int:
     _print(Registry(paths.REGISTRY_DB).fetch(args.table, args.limit))
     return 0
@@ -189,6 +202,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--offline-markets", action="store_true",
                    help="statische Marktdefinitionen (nur mit synthetischen Daten)")
     s.set_defaults(func=cmd_backtest)
+
+    s = sub.add_parser("compare", help="Alle Strategien fair vergleichen (Train/Validation, Fenster, Marktphasen)")
+    s.add_argument("--source", default="binance", help="Börsenname oder 'synthetic'")
+    s.add_argument("--strategies", nargs="+", help="Standard: alle aus config/project.json")
+    s.add_argument("--timeframe", default="1h")
+    s.add_argument("--include-test", action="store_true",
+                   help="unberührten Test-Abschnitt auswerten (wird protokolliert; sparsam verwenden)")
+    s.add_argument("--no-windows", action="store_true", help="rollierende Fenster überspringen")
+    s.add_argument("--offline-markets", action="store_true")
+    s.set_defaults(func=cmd_compare)
 
     s = sub.add_parser("runs", help="Protokoll anzeigen")
     s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs"])

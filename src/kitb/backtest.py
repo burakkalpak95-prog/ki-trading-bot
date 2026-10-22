@@ -90,18 +90,20 @@ def summarize(strategy_stats: dict[str, Any], cost_model: CostModel) -> dict[str
     return out
 
 
-def run_backtest(
+def run_freqtrade_backtest(
     *,
-    strategy: str = "BaselineEmaCross",
-    timeframe: str = "1h",
-    timerange: str | None = None,
+    strategies: list[str],
+    timeframe: str,
+    timerange: str | None,
     datadir: Path,
     data_source: str,
-    offline: bool = False,
-    registry: Registry | None = None,
-    results_dir: Path | None = None,
-    config_path: Path | None = None,
+    offline: bool,
+    registry: Registry | None,
+    results_dir: Path | None,
+    config_path: Path | None,
+    extra_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Ein Freqtrade-Lauf für eine oder mehrere Strategien unter identischen Bedingungen."""
     assert_run_mode_allowed("backtest")
     project = load_project_config()
     config_path = config_path or paths.FREQTRADE_BASE_CONFIG
@@ -126,6 +128,7 @@ def run_backtest(
                                    + "; ".join(i.message for i in rep.issues if i.severity == "ERROR"))
         fingerprints[pair] = rep.fingerprint
         benchmark[pair] = buy_and_hold(df, cost_model)
+    benchmark["equal_weight_net_return"] = sum(b["net_return"] for b in benchmark.values()) / len(pairs)
 
     # 2) Freqtrade-Backtest
     from freqtrade import __version__ as ft_version
@@ -136,7 +139,7 @@ def run_backtest(
     results_dir.mkdir(parents=True, exist_ok=True)
     argv = [
         "backtesting", "-c", str(config_path), "--userdir", str(paths.USER_DATA),
-        "--datadir", str(datadir), "--strategy", strategy,
+        "--datadir", str(datadir), "--strategy-list", *strategies,
         "--strategy-path", str(paths.USER_DATA / "strategies"), "--timeframe", timeframe,
         "--fee", str(cost_model.effective_fee_per_side), "--export", "trades",
         "--backtest-directory", str(results_dir), "--data-format-ohlcv", "parquet",
@@ -150,16 +153,43 @@ def run_backtest(
 
     result_file = results_dir / get_latest_backtest_filename(results_dir)
     stats = load_backtest_stats(result_file)
-    metrics = summarize(stats["strategy"][strategy], cost_model)
-    metrics["buy_and_hold"] = benchmark
-    metrics["synthetic_data"] = synthetic
+    out: dict[str, Any] = {"result_file": str(result_file), "data_fingerprints": fingerprints,
+                           "strategies": {}}
+    for strategy in strategies:
+        strat_stats = stats["strategy"][strategy]
+        metrics = summarize(strat_stats, cost_model)
+        metrics["buy_and_hold"] = benchmark
+        metrics["excess_vs_buy_and_hold"] = (
+            metrics["profit_total"] - benchmark["equal_weight_net_return"])
+        metrics["synthetic_data"] = synthetic
+        metrics.update(extra_metrics or {})
+        run_id = None
+        if registry:
+            run_id = registry.add_backtest(
+                strategy=strategy, timeframe=timeframe, timerange=timerange, data_source=data_source,
+                synthetic=synthetic, data_fingerprints=fingerprints,
+                config_sha256=_sha256_file(config_path), cost_model=cost_model.__dict__,
+                freqtrade_version=ft_version, result_file=str(result_file), metrics=metrics)
+        out["strategies"][strategy] = {"run_id": run_id, "metrics": metrics,
+                                       "trades": strat_stats.get("trades", [])}
+    return out
 
-    run_id = None
-    if registry:
-        run_id = registry.add_backtest(
-            strategy=strategy, timeframe=timeframe, timerange=timerange, data_source=data_source,
-            synthetic=synthetic, data_fingerprints=fingerprints, config_sha256=_sha256_file(config_path),
-            cost_model=cost_model.__dict__, freqtrade_version=ft_version,
-            result_file=str(result_file), metrics=metrics)
-    return {"run_id": run_id, "result_file": str(result_file), "metrics": metrics,
-            "data_fingerprints": fingerprints}
+
+def run_backtest(
+    *,
+    strategy: str = "BaselineEmaCross",
+    timeframe: str = "1h",
+    timerange: str | None = None,
+    datadir: Path,
+    data_source: str,
+    offline: bool = False,
+    registry: Registry | None = None,
+    results_dir: Path | None = None,
+    config_path: Path | None = None,
+) -> dict[str, Any]:
+    res = run_freqtrade_backtest(strategies=[strategy], timeframe=timeframe, timerange=timerange,
+                                 datadir=datadir, data_source=data_source, offline=offline,
+                                 registry=registry, results_dir=results_dir, config_path=config_path)
+    one = res["strategies"][strategy]
+    return {"run_id": one["run_id"], "result_file": res["result_file"], "metrics": one["metrics"],
+            "data_fingerprints": res["data_fingerprints"]}
