@@ -1,4 +1,7 @@
-"""Phase 7: Paper-Trading beider Bots über Freqtrade-Dry-Run – virtuelles Kapital, kein echtes Geld.
+"""Phase 7: Paper-Trading über Freqtrade-Dry-Run – virtuelles Kapital, kein echtes Geld.
+
+Zwei Arten: KI-Bots (``bots``, brauchen eine freigegebene, aktive Modellversion) und Regel-Strategien
+(``paper_strategies``, brauchen eine namentliche Freigabe in ``kitb.strategy_approval``).
 
 - Beide Bots: gleiche Basis-Konfiguration (Startkapital, Positionsgröße, max. offene Trades),
   gleiche Risikolimits (config/risk.json), gleiche Gebühr.
@@ -17,11 +20,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from kitb import killswitch, models, paths
+from kitb import killswitch, models, paths, strategy_approval
 from kitb.config import load_freqtrade_config, load_project_config
 from kitb.registry import Registry
 from kitb.safety import (SafetyError, assert_freqtrade_command_allowed, assert_run_mode_allowed,
                          check_paper_config)
+
+
+def paper_ids() -> list[str]:
+    project = load_project_config()
+    return list(project["bots"]) + list(project.get("paper_strategies", {}))
 
 
 def paper_dir(bot: str, user_data_dir: Path | None = None) -> Path:
@@ -30,6 +38,8 @@ def paper_dir(bot: str, user_data_dir: Path | None = None) -> Path:
 
 def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = None) -> tuple[Path, dict[str, Any]]:
     project = load_project_config()
+    if bot in project.get("paper_strategies", {}):
+        return _build_rule_config(bot, reg, project, user_data_dir)
     if bot not in project["bots"]:
         raise ValueError(f"Unbekannter Bot: {bot}")
     mv = models.active(reg, bot)
@@ -62,13 +72,43 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
     return path, cfg
 
 
+def _build_rule_config(paper_id: str, reg: Registry, project: dict[str, Any],
+                       user_data_dir: Path | None) -> tuple[Path, dict[str, Any]]:
+    approval = strategy_approval.current(reg, paper_id)
+    if not approval:
+        raise SafetyError(f"Für {paper_id} liegt keine gültige Freigabe vor "
+                          "(kitb strategies approve --id ... --by NAME --reason ...).")
+    d = paper_dir(paper_id, user_data_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    cfg = load_freqtrade_config()
+    cfg.update({
+        "bot_name": paper_id,
+        "dry_run": True,
+        "initial_state": "running",
+        "db_url": f"sqlite:///{(d / 'tradesv3.dryrun.sqlite').resolve()}",
+        "fee": project["costs"]["fee_per_side"],
+        "kitb_strategy_approval_id": approval["id"],
+    })
+    cfg.pop("timeframe", None)  # Zeitintervall kommt aus der Strategie (z. B. 1d)
+    problems = check_paper_config(cfg, project["allowed_exchanges"], project["allowed_pairs"],
+                                  str((user_data_dir or paths.USER_DATA).resolve() / "paper"))
+    if problems:
+        raise SafetyError("Unsichere Paper-Konfiguration:\n- " + "\n- ".join(problems))
+    path = d / "config.json"
+    path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    return path, cfg
+
+
 def command(bot: str, config_path: Path, user_data_dir: Path | None = None) -> list[str]:
-    spec = load_project_config()["bots"][bot]
+    project = load_project_config()
     ud = user_data_dir or paths.USER_DATA
-    return [sys.executable, "-m", "freqtrade", "trade", "-c", str(config_path), "--userdir", str(ud),
-            "--strategy", spec["strategy"], "--strategy-path", str(paths.USER_DATA / "strategies"),
-            "--freqaimodel", spec["freqaimodel"], "--freqaimodel-path", str(paths.USER_DATA / "freqaimodels"),
-            "--logfile", str(paper_dir(bot, user_data_dir) / "freqtrade.log")]
+    rule = project.get("paper_strategies", {}).get(bot)
+    spec = rule or project["bots"][bot]
+    cmd = [sys.executable, "-m", "freqtrade", "trade", "-c", str(config_path), "--userdir", str(ud),
+           "--strategy", spec["strategy"], "--strategy-path", str(paths.USER_DATA / "strategies")]
+    if not rule:
+        cmd += ["--freqaimodel", spec["freqaimodel"], "--freqaimodel-path", str(paths.USER_DATA / "freqaimodels")]
+    return cmd + ["--logfile", str(paper_dir(bot, user_data_dir) / "freqtrade.log")]
 
 
 def _pidfile(bot: str, user_data_dir: Path | None = None) -> Path:
@@ -94,7 +134,8 @@ def start(bot: str, *, foreground: bool, user_data_dir: Path | None = None) -> i
         raise SafetyError(f"{bot} läuft bereits (PID {pid_path.read_text()}).")
     cfg_path, cfg = build_paper_config(bot, reg, user_data_dir)
     cmd = command(bot, cfg_path, user_data_dir)
-    reg.log_source_event("paper", "start", "ok", {"bot": bot, "model_version_id": cfg["kitb_model_version_id"],
+    reg.log_source_event("paper", "start", "ok", {"bot": bot, "model_version_id": cfg.get("kitb_model_version_id"),
+                                                  "strategy_approval_id": cfg.get("kitb_strategy_approval_id"),
                                                   "foreground": foreground})
     if foreground:
         return subprocess.call(cmd)
@@ -127,7 +168,7 @@ def status(bot: str, user_data_dir: Path | None = None) -> dict[str, Any]:
 
 
 def report(user_data_dir: Path | None = None) -> str:
-    """Vergleich Bot A / Bot B aus den Dry-Run-Datenbanken (Markdown, wird unter reports/ gespeichert)."""
+    """Vergleich aller Paper-Bots aus den Dry-Run-Datenbanken (Markdown, wird unter reports/ gespeichert)."""
     from datetime import UTC, datetime
 
     import pandas as pd
@@ -138,7 +179,7 @@ def report(user_data_dir: Path | None = None) -> str:
     lines = ["# Paper-Trading-Vergleich", "", f"Stand: {datetime.now(UTC):%Y-%m-%d %H:%M} UTC · Startkapital je Bot: {wallet} USDT", "",
              "| Bot | Trades (geschl.) | offen | Netto | Max DD (realisiert) | Trefferquote | Gebühren | erster Trade | Stichprobe |",
              "|---|---:|---:|---:|---:|---:|---:|---|---|"]
-    for bot in load_project_config()["bots"]:
+    for bot in paper_ids():
         t = paper_trades(bot, user_data_dir)
         closed = t[t["is_open"] == 0] if not t.empty else t
         if closed.empty:

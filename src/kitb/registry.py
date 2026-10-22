@@ -85,9 +85,19 @@ CREATE TABLE IF NOT EXISTS model_events (
     actor TEXT NOT NULL,
     details TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS strategy_approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    paper_id TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    event TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL
+);
 """
 
-TABLES = ("source_events", "validation_reports", "backtest_runs", "decisions", "model_versions", "model_events")
+TABLES = ("source_events", "validation_reports", "backtest_runs", "decisions", "model_versions", "model_events",
+          "strategy_approvals")
 
 
 def _now() -> str:

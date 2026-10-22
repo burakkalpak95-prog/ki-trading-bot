@@ -129,5 +129,11 @@
             "min_trades_kept_ratio": 0.3,
             "require_train_not_worse": true
         }
+    },
+    "paper_strategies": {
+        "trend_d1": {
+            "strategy": "DailyTrendSma",
+            "description": "Regel-Strategie: Tagesschluss über SMA 200 (bestand Vorperiode 2019–2021 und Test-Abschnitt)"
+        }
     }
 }

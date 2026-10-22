@@ -259,10 +259,33 @@ def cmd_killswitch(args) -> int:
     return 0
 
 
+def cmd_strategies(args) -> int:
+    from kitb import strategy_approval
+    from kitb.models import GovernanceError
+
+    reg = Registry(paths.REGISTRY_DB)
+    ids = list(load_project_config().get("paper_strategies", {}))
+    try:
+        if args.action == "approve":
+            print(f"Freigabe #{strategy_approval.approve(reg, args.id, by=args.by, reason=args.reason)} für {args.id}.")
+        elif args.action == "revoke":
+            print(f"Freigabe für {args.id} zurückgezogen (#{strategy_approval.revoke(reg, args.id, by=args.by, reason=args.reason)}).")
+        else:
+            _print([{"id": i, **load_project_config()["paper_strategies"][i],
+                     "approval": strategy_approval.current(reg, i)} for i in ids])
+    except GovernanceError as e:
+        print(f"Abgelehnt: {e}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_paper(args) -> int:
     from kitb import paper
 
-    bots = list(load_project_config()["bots"]) if args.bot == "all" else [args.bot]
+    if args.bot != "all" and args.bot not in paper.paper_ids():
+        print(f"Unbekannt: {args.bot}. Möglich: {', '.join(paper.paper_ids())} oder all", file=sys.stderr)
+        return 2
+    bots = paper.paper_ids() if args.bot == "all" else [args.bot]
     if args.action in ("start", "run"):
         if args.action == "run" and len(bots) != 1:
             print("'run' (Vordergrund, z. B. Docker) nur für einen Bot.", file=sys.stderr)
@@ -407,8 +430,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("paper", help="Paper-Trading (Dry-Run, virtuelles Kapital): start/stop/status/run")
     s.add_argument("action", choices=["start", "stop", "status", "run", "report"])
-    s.add_argument("--bot", default="all", choices=["bot_a", "bot_b", "all"])
+    s.add_argument("--bot", default="all", help="bot_a, bot_b, eine Paper-Strategie (z. B. trend_d1) oder all")
     s.set_defaults(func=cmd_paper)
+
+    s = sub.add_parser("strategies", help="Regel-Strategien für Paper-Trading: list/approve/revoke (nur Menschen)")
+    s.add_argument("action", choices=["list", "approve", "revoke"])
+    s.add_argument("--id", help="Paper-Strategie aus config/project.json → paper_strategies, z. B. trend_d1")
+    s.add_argument("--by", help="Name der freigebenden Person (Pflicht für approve/revoke)")
+    s.add_argument("--reason", default="")
+    s.set_defaults(func=cmd_strategies)
 
     s = sub.add_parser("live", help="Live-Trading ist GESPERRT. Nur: readiness (Checkliste), confirm-risk")
     s.add_argument("action", choices=["readiness", "confirm-risk"])

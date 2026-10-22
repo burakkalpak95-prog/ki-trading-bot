@@ -171,3 +171,12 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   festen, vorab gewählten Parametern – bewusst keine Optimierung, um Overfitting auf den Validation-Abschnitt zu vermeiden.
   Weil die Daten am 01.01.2022 beginnen, startet ihr Train-Abschnitt erst nach 200 Tagen Vorlauf.
 
+## ADR-015: Paper-Trading auch für Regel-Strategien, mit menschlicher Freigabe
+
+- Anlass: DailyTrendSma bestand die vorab festgelegten Prüfungen (Vorperiode 2019–2021, Test-Abschnitt); KI-Bots nicht.
+- Regel-Strategien haben keine Modellversion. Stattdessen Tabelle `strategy_approvals` (approved/revoked, Name + Begründung,
+  nur Menschen). Eine Freigabe gilt nur für die konfigurierte Strategie; wird `paper_strategies` geändert, ist sie ungültig.
+- Paper-Konfiguration ohne `timeframe` (kommt aus der Strategie, hier 1d) und ohne FreqAI; sonst identisch zu den Bots
+  (dry_run, keine Keys, eigene DB, Risikomodul, Not-Stopp).
+- Eigenes Compose-Profil `paper-trend`, damit nicht versehentlich die KI-Bots ohne Freigabe in eine Neustart-Schleife geraten.
+

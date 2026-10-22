@@ -11,7 +11,7 @@
 | Offene Ports | Kein Freqtrade-API-Server, kein Telegram. `kitb`- und Paper-Dienste ohne Ports; Dashboard nur `127.0.0.1:8501`, Telemetrie aus | `tests/test_safety.py` |
 | Verluste im Paper-/späteren Live-Betrieb | Zentrales Risikomodul in allen Strategien: Positionsgröße, Risiko je Trade, Gesamtexposure, Tagesverlust, Drawdown-Stopp, Datenalter, Volumenanteil | `tests/test_risk_paper.py` |
 | Fehlverhalten im Lauf | Not-Stopp-Datei `user_data/KILL_SWITCH`: neue Einstiege abgelehnt, Bots beenden sich; Zurücksetzen nur durch Menschen | `tests/test_risk_paper.py`, `tests/test_dashboard.py` |
-| KI ändert selbst Modelle/Limits/Modus | Modell-Freigabe, Aktivierung, Rollback, Not-Stopp-Reset und Bestätigung der Risikolimits verlangen einen menschlichen Namen; Drift und Agenten melden/vetoen nur | `tests/test_learning_system.py`, `tests/test_agents.py` |
+| KI ändert selbst Modelle/Limits/Modus | Modell-Freigabe, Freigabe von Regel-Strategien für Paper-Trading (`kitb strategies approve`), Aktivierung, Rollback, Not-Stopp-Reset und Bestätigung der Risikolimits verlangen einen menschlichen Namen; Drift und Agenten melden/vetoen nur | `tests/test_learning_system.py`, `tests/test_agents.py` |
 | Overfitting / Datenleck | Chronologischer Split, Test-Abschnitt gesperrt (Nutzung protokolliert), FreqAI `shuffle=false`, p-Wert-Kriterium | `tests/test_evaluation.py`, `tests/test_compare_integration.py`, `tests/test_strategy_lookahead.py` |
 | Fehlerhafte/veraltete Daten | Validierung vor jedem Backtest, Abbruch bei ERROR; Datenalter-Prüfung im Risikomodul | `tests/test_validate.py` |
 | Offline-Märkte mit echten Daten verwechselt | `--offline-markets` nur für gekennzeichnete synthetische Daten | `tests/test_backtest_integration.py` |

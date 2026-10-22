@@ -73,9 +73,10 @@ with tabs[1]:
 
 with tabs[2]:
     wallet = load_freqtrade_config()["dry_run_wallet"]
-    rows = [D.paper_summary(bot, wallet) for bot in project["bots"]]
+    paper_ids = list(project["bots"]) + list(project.get("paper_strategies", {}))
+    rows = [D.paper_summary(bot, wallet) for bot in paper_ids]
     st.dataframe(pd.DataFrame(rows), use_container_width=True)
-    for bot in project["bots"]:
+    for bot in paper_ids:
         t = D.paper_trades(bot)
         if not t.empty:
             st.subheader(f"{bot}: Trades")

@@ -102,6 +102,8 @@ docker compose run --rm kitb models rollback --bot bot_a --by "Burak"
 ```bash
 docker compose --profile dashboard up dashboard                     # http://127.0.0.1:8501
 docker compose --profile paper up -d paper-bot-a paper-bot-b        # benötigt aktive, freigegebene Modelle
+docker compose run --rm kitb strategies approve --id trend_d1 --by "Burak" --reason "..."   # Regel-Strategie freigeben
+docker compose --profile paper-trend up -d                          # DailyTrendSma im Paper-Trading
 docker compose run --rm kitb paper status
 docker compose run --rm kitb paper report
 docker compose run --rm kitb kill-switch on                         # Not-Stopp; zurücksetzen: kill-switch off

@@ -131,6 +131,21 @@ Vorab festgelegte Regel für den Test-Abschnitt: Gewinn > 0, Max DD ≤ 25 % und
 Abschnitt. Besteht eine Strategie, wird sie Kandidat für Paper-Trading (eigene Freigabe nötig); sonst wird keine Variante
 nachträglich angepasst und erneut am Test-Abschnitt geprüft.
 
+## Test-Abschnitt (einmalig ausgewertet, 05.11.2025 – 22.10.2026)
+
+| | Trades | Netto | Max DD | Rendite/DD | PF |
+|---|---:|---:|---:|---:|---:|
+| DailyTrendSma | 5 | +3,45 % | 1,93 % | 1,79 | 2,79 |
+| DailyMomentum | 10 | −5,49 % | 8,03 % | −0,68 | 0,32 |
+| Buy&Hold gleichgewichtet | – | −21,21 % | 50,38 % | −0,42 | – |
+
+Train und Validation unverändert gegenüber dem Lauf vor der Test-Auswertung. Vorab festgelegte Regel: **DailyTrendSma besteht**
+(nur 5 Trades – kein statistischer Beleg), **DailyMomentum fällt durch** (Verlust) und wird nicht weiterverfolgt. Der
+Test-Abschnitt ist damit verbraucht; künftige Varianten brauchen neue, ungesehene Daten (z. B. ab jetzt Paper-Trading).
+
+**Paper-Trading für Regel-Strategien** (ADR-015): `paper_strategies.trend_d1` = DailyTrendSma, Start nur nach namentlicher
+Freigabe (`kitb strategies approve`), eigenes Compose-Profil `paper-trend`. Tests (Cloud-venv): 171 bestanden.
+
 ## Erreichte Datenquellen (22.10.2026)
 
 | Quelle | Ergebnis |

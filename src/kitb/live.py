@@ -105,12 +105,15 @@ def risk_limits_confirmed(user_data_dir: Path | None = None) -> bool:
 
 
 def readiness(user_data_dir: Path | None = None) -> dict[str, Any]:
-    from kitb import models
+    from kitb import models, strategy_approval
+    from kitb.config import load_project_config
     from kitb.registry import Registry
 
     reg = Registry(paths.REGISTRY_DB)
     paper_trades = 0
-    for bot in ("bot_a", "bot_b"):
+    from kitb.paper import paper_ids
+
+    for bot in paper_ids():
         db = (user_data_dir or paths.USER_DATA) / "paper" / bot / "tradesv3.dryrun.sqlite"
         if db.exists():
             from kitb.dashboard.data import paper_trades as pt
@@ -122,7 +125,9 @@ def readiness(user_data_dir: Path | None = None) -> dict[str, Any]:
         "Separate Nutzerfreigabe dokumentiert": False,
         "Unabhängige technische/risikobezogene Prüfung dokumentiert": False,
         "Risikolimits ausdrücklich bestätigt (aktueller Stand)": risk_limits_confirmed(user_data_dir),
-        "Aktive, freigegebene Modellversion (mind. ein Bot)": any(models.active(reg, b) for b in ("bot_a", "bot_b")),
+        "Aktive, freigegebene Modellversion oder freigegebene Regel-Strategie": (
+            any(models.active(reg, b) for b in ("bot_a", "bot_b"))
+            or any(strategy_approval.current(reg, i) for i in load_project_config().get("paper_strategies", {}))),
         "Langzeit-Paper-Trading: mind. 100 Trades insgesamt": paper_trades >= 100,
         "Not-Stopp funktionsfähig (Datei schreibbar)": os.access((user_data_dir or paths.USER_DATA), os.W_OK),
         "Not-Stopp derzeit nicht aktiv": not killswitch.is_active(user_data_dir),

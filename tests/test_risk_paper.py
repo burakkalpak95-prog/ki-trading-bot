@@ -177,3 +177,28 @@ def test_paper_report_from_dry_run_db(tmp_path, monkeypatch):
     text = paper.report(ud)
     assert "| bot_a | 2 | 1 | -0.04% |" in text and "| bot_b | 0 |" in text
     assert list((ud / "reports").glob("paper-*.md"))
+
+
+def test_rule_strategy_paper_requires_human_approval(reg, tmp_path):
+    from kitb import strategy_approval
+    from kitb.models import GovernanceError
+
+    with pytest.raises(SafetyError):
+        paper.build_paper_config("trend_d1", reg, tmp_path / "ud")
+    with pytest.raises(GovernanceError):
+        strategy_approval.approve(reg, "trend_d1", by="bot", reason="automatisch")
+    with pytest.raises(GovernanceError):
+        strategy_approval.approve(reg, "trend_d1", by="Burak", reason="")
+    strategy_approval.approve(reg, "trend_d1", by="Burak", reason="Vorperiode und Test bestanden")
+    path, cfg = paper.build_paper_config("trend_d1", reg, tmp_path / "ud")
+    assert cfg["dry_run"] is True and "freqai" not in cfg and "timeframe" not in cfg
+    assert not cfg["exchange"].get("key") and not cfg["exchange"].get("secret")
+    cmd = paper.command("trend_d1", path, tmp_path / "ud")
+    assert "DailyTrendSma" in cmd and "--freqaimodel" not in cmd
+    strategy_approval.revoke(reg, "trend_d1", by="Burak", reason="Test")
+    with pytest.raises(SafetyError):
+        paper.build_paper_config("trend_d1", reg, tmp_path / "ud")
+
+
+def test_paper_ids_include_rule_strategies():
+    assert paper.paper_ids() == ["bot_a", "bot_b", "trend_d1"]
