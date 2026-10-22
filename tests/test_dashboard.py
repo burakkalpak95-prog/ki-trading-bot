@@ -123,3 +123,11 @@ def test_performance_compares_bot_with_holding():
     assert "zu früh" in p["verdict"] and p["winrate"] == 1.0
     t = D.trades_table(trades, {})
     assert t.iloc[0]["Ergebnis (USDT)"] == 100.0 and t.iloc[0]["Grund"] == "unter 200-Tage-Linie"
+
+
+def test_overview_preselects_bot_that_ran(home):
+    (home / "paper" / "trend_d1").mkdir(parents=True)
+    (home / "paper" / "trend_d1" / "freqtrade.log").write_text("x\n")
+    assert D.ever_started("trend_d1") and not D.ever_started("bot_a")
+    at = _run_app()
+    assert not at.selectbox or at.selectbox[0].options == ["trend_d1"]

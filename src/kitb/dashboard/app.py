@@ -38,7 +38,9 @@ def _daily(exchange_id: str, pair: str) -> pd.DataFrame:
 def simple_overview() -> None:
     """Einfache Ansicht für den Alltag: läuft der Bot, was hält er, was hat er vor. Aktualisiert sich jede Minute."""
     ids = list(project.get("paper_strategies", {})) + list(project["bots"])
-    bot = st.selectbox("Bot", ids, label_visibility="collapsed") if len(ids) > 1 else ids[0]
+    started = [b for b in ids if D.ever_started(b)]  # nur Bots zeigen, die schon einmal gelaufen sind
+    ids = started or ids
+    bot = st.selectbox("Welcher Bot?", ids, key="overview_bot") if len(ids) > 1 else ids[0]
     ft = load_freqtrade_config()
     o = D.overview(bot, ft["dry_run_wallet"], fetch=_daily, exchange_id=ft["exchange"]["name"])
     if o["kill_switch"]:
@@ -59,10 +61,12 @@ def simple_overview() -> None:
     nd = o["next_decision"]
     c4.metric("Nächste Entscheidung", f"{nd.tz_convert('Europe/Berlin'):%d.%m. %H:%M} Uhr")
 
-    st.subheader("Was der Bot gerade vorhat")
     held = {p["Markt"] for p in o["positions"]}
-    for pair, m in o["markets"].items():
-        st.write(("✅ " if pair in held else "⏸️ ") + D.explain_market(pair, m, pair in held))
+    # Die Erklärung beschreibt die 200-Tage-Regel – nur für laufende DailyTrendSma-Bots sinnvoll.
+    if project.get("paper_strategies", {}).get(bot, {}).get("strategy") == "DailyTrendSma" and o["running"]:
+        st.subheader("Was der Bot gerade vorhat")
+        for pair, m in o["markets"].items():
+            st.write(("✅ " if pair in held else "⏸️ ") + D.explain_market(pair, m, pair in held))
     if o["fetch_error"]:
         st.caption(f"Aktuelle Kurse nicht abrufbar ({o['fetch_error']}).")
 

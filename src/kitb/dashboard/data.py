@@ -132,6 +132,11 @@ def trend_view(daily: pd.DataFrame, period: int = 200) -> dict[str, Any]:
             "above_now": bool(price > sma), "distance": round(price / sma - 1, 4)}
 
 
+def ever_started(bot: str, user_data: Path | None = None) -> bool:
+    d = (user_data or paths.USER_DATA) / "paper" / bot
+    return (d / "freqtrade.log").exists() or (d / "tradesv3.dryrun.sqlite").exists()
+
+
 def next_daily_close(now: pd.Timestamp | None = None) -> pd.Timestamp:
     now = now or pd.Timestamp.now(tz="UTC")
     return now.normalize() + pd.Timedelta(days=1)
