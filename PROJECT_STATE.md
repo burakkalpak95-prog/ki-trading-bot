@@ -1,6 +1,6 @@
 # Projektstand
 
-**Stand:** 22.10.2026 · **Phasen:** 1–8 umgesetzt (Code + Tests), **nur mit synthetischen Daten geprüft**
+**Stand:** 22.10.2026 · **Phasen:** 1–8 umgesetzt (Code + Tests); **echte Daten auf dem Zielrechner ausgewertet**
 **Handelsmodus:** keiner aktiv · Paper-Trading vorbereitet (Dry-Run) · Live-Trading gesperrt
 
 ## Umgesetzt je Phase
@@ -17,16 +17,16 @@
 | 8 | Gesperrter Live-Adapter, Bereitschafts-Checkliste, Bestätigung der Risikolimits | 8fa0982 |
 | Doku | README, ROADMAP, Architektur (ADR-006…013), Sicherheit, Windows-Anleitung auf Stand Phase 8; Test-Korrektur | siehe Git-Log |
 
-## Testergebnisse (nur Linux-Cloud-Umgebung)
+## Testergebnisse
 
 | Umgebung | Ergebnis |
 |---|---|
 | venv, Python 3.13, Pakete gemäß `constraints.txt` | 154 bestanden, 0 fehlgeschlagen (nach Korrektur eines veralteten Tests, s. u.) |
 | Docker-Image `kitb:local` (Basis `freqtradeorg/freqtrade:2026.9_freqai`, Python 3.14.7) | 154 bestanden, 0 fehlgeschlagen |
-| Netzwerktest `pytest -m network` (Binance) | **fehlgeschlagen** – Cloud-Proxy sperrt Börsen-Hosts (HTTP 403) |
+| Netzwerktest `pytest -m network` (Binance) | Cloud: fehlgeschlagen (Proxy 403) · **Windows: 1 bestanden** |
 | Paper-Dry-Run (Rauchtest) | Konfiguration, Strategie, Modell, DB-Anlage und geordnetes Beenden funktionieren; **keine Marktdaten** (Börse gesperrt) |
 | Dashboard | Startet; Reiter „Kurse & Signale“ und „Bot A vs. Bot B“ per Browser-Screenshot geprüft, Datenfunktionen per Tests |
-| Windows 11 / WSL2 / Docker Desktop | **nicht getestet** |
+| Windows 11 Pro, Docker Desktop 4.96.3 (Engine 29.9.2, Compose v5.6.1), Projekt unter `C:\Projekte\ki-trading-bot` | Build ok, `check-safety` ok, **154 bestanden, 0 fehlgeschlagen** (58 s); keine Rechteprobleme mit `user_data` |
 
 Korrigierter Test: `test_cli_has_no_trading_command` verbot noch den Unterbefehl `live`, der seit Phase 8 existiert
 (nur `readiness`/`confirm-risk`). Der Test prüft jetzt genau diese beiden erlaubten Aktionen.
@@ -46,14 +46,52 @@ Validation-Abschnitt 15.03.–08.08.2024, Seed 42, inkl. Risikomodul und 0,17 % 
 - Agenten: kein belegter Nutzen → bleiben deaktiviert.
 - Auf Zufallsdaten ist „kein Modell besteht“ das erwartete Ergebnis; ein Bestehen wäre ein Hinweis auf ein Datenleck.
 
-## Erreichte Datenquellen (aus der Cloud, 22.10.2026)
+## Ergebnisse auf echten Daten (Binance, Windows-Rechner, 22.10.2026)
+
+Daten: BTC/USDT und ETH/USDT, je 42 140 Stundenkerzen und 1 755 Tageskerzen, 01.01.2022 – 22.10.2026 20:00 UTC.
+Validierung: OK; einziger Befund eine fehlende 1h-Kerze nach 24.03.2023 12:00 UTC (Volumen 0; vermutlich Binance-Ausfall – Unsicher).
+
+Baseline-Backtest 01.01.2023 – heute: 608 Trades, **+1,94 %**, Max DD 29,4 %, Profit Factor 1,01, p-Wert 0,95
+(nicht von Zufall unterscheidbar). Buy&Hold gleichgewichtet im selben Zeitraum: **+244 %**. Kosten inkl. Slippage 4 783 USDT.
+
+Validation-Abschnitt 19.11.2024 – 05.11.2025 (Test-Abschnitt 05.11.2025 – 22.10.2026 **unberührt**); Buy&Hold nach Kosten **+6,97 %**:
+
+| Strategie / Bot | Netto | Max DD | Profit Factor |
+|---|---:|---:|---:|
+| BaselineEmaCross | −13,77 % | 23,0 % | 0,73 |
+| TrendEmaAdx | −20,53 % | 21,4 % | 0,31 |
+| MomentumMacdRsi | −17,25 % | 20,5 % | 0,61 |
+| MeanReversionBollinger | −3,22 % | 4,4 % | 0,35 (nur 14 Trades) |
+| BreakoutDonchian | −9,30 % | 16,0 % | 0,84 |
+| VolatilitySqueeze | −13,41 % | 17,4 % | 0,67 |
+| Bot A (LogReg) | −9,57 % | 20,3 % | 0,86 |
+| Bot B (LightGBM) | −50,47 % | 50,8 % | 0,56 |
+| AgentGatedBaseline | +5,27 % | 6,2 % | 1,28 |
+| AgentGatedBreakout | +2,16 % | 8,2 % | 1,06 |
+
+- Bot A und Bot B erfüllen die Freigabekriterien **nicht** (Modellversionen #1, #2). Bot B: 40,9 Prozentpunkte schlechter als
+  Bot A bei 8,8-facher Rechenzeit (39 s vs. 4,5 s).
+- `agents-evaluate` meldet für AgentGatedBreakout „Nutzen belegt“ (mehr Gewinn, weniger Drawdown, 66,7 % der Fenster besser),
+  für AgentGatedBaseline nicht. **Einordnung:** Der Vorteil stammt vermutlich vor allem aus weniger Trades (weniger Kosten),
+  beruht auf einem einzigen Validation-Abschnitt und kehrt sich im Train-Abschnitt um (AgentGatedBreakout −11 %). Die Agenten
+  bleiben deshalb **aus** (`agents.enabled=false`); das Kriterium in `agents-evaluate` ist zu schwach und sollte auch den
+  Train-Abschnitt verlangen.
+- **Gesamtbild:** Keine Strategie und kein Bot schlägt Buy&Hold. Kein Modell wird freigegeben, Paper-Trading wird nicht gestartet.
+- Auffälligkeit: BaselineEmaCross liefert im Train-Abschnitt je nach Lauf leicht verschiedene Werte (+17,87 % / 437 Trades vs.
+  +14,61 % / 439 Trades). Vermutete Ursache: unterschiedliche Vorlaufdaten je nach Strategie-Kombination (Indikator-Aufwärmphase) – Unsicher, nicht geprüft.
+
+Berichte (auf dem Windows-Rechner): `user_data/reports/compare-20261022-211012-2bf0b6`, `ml-compare-20261022-211134-292bda`,
+`compare-20261022-211250-69b03e`.
+
+## Erreichte Datenquellen (22.10.2026)
 
 | Quelle | Ergebnis |
 |---|---|
-| Binance, OKX, Kraken, Bybit, Bitstamp, Coinbase, CoinGecko | gesperrt (Proxy 403) |
+| Binance, OKX, Kraken – vom Windows-Rechner | **erreichbar** (BTC/USDT und ETH/USDT verfügbar) |
+| Binance, OKX, Kraken, Bybit, Bitstamp, Coinbase, CoinGecko – aus der Cloud | gesperrt (Proxy 403) |
 | pypi.org, Docker Hub, raw.githubusercontent.com | erreichbar |
 
-→ Es wurden **keine echten Kursdaten** abgerufen.
+→ Echte Daten wurden auf dem Windows-Rechner von Binance geladen.
 
 ## Kosten
 
@@ -61,18 +99,20 @@ Validation-Abschnitt 15.03.–08.08.2024, Seed 42, inkl. Risikomodul und 0,17 % 
 
 ## Offene Punkte / bekannte Probleme
 
-1. Ziel-Repository für den Push ist nicht festgelegt.
-2. Alles auf Windows 11 ausführen: Build, Tests, `probe`, echte Daten, `compare`, `ml-compare`.
-3. Börsenwahl nach `probe` (Binance-Verfügbarkeit am Standort: Weiß ich nicht); Gebühr 0,10 % beim Anbieter prüfen;
-   Slippage/Spread sind Schätzungen.
-4. Langzeit-Paper-Trading ist nur auf dem Zielrechner möglich; Startvoraussetzung ist eine freigegebene, aktive Modellversion.
-5. Freqtrade-Fehler im Ersatzpfad nach fehlgeschlagenem FreqAI-Training (`DataFrame` ohne `.dtype`); abgefangen durch
-   Prüfung der Vorlaufdaten, nicht behoben.
-6. GPU-Nutzung nicht geprüft (für die aktuellen Modelle nicht nötig).
-7. Docker-Python (3.14) und Cloud-venv (3.13) unterscheiden sich; maßgeblich ist das Docker-Image.
-8. Pandas-Deprecation-Warnungen aus Freqtrade – harmlos, bei Updates beobachten.
+1. **Kein Vorteil gegenüber Buy&Hold** auf echten Daten – weder Regel-Strategien noch KI-Bots. Ohne neue Idee (andere Features,
+   Labels, Zeitintervalle oder Strategieform) ist Paper-Trading derzeit nicht sinnvoll.
+2. `agents-evaluate`: Nutzenkriterium verschärfen (Vorteil auch im Train-Abschnitt und über die Mehrheit der Fenster).
+3. Leicht unterschiedliche Train-Ergebnisse derselben Strategie je nach Lauf (Aufwärmphase vermutet) – untersuchen.
+4. Gebühr 0,10 % bei Binance für das eigene Konto prüfen; Slippage/Spread sind Schätzungen.
+5. Repository `burakkalpak95-prog/ki-trading-bot` ist öffentlich; Umstellung auf privat empfohlen.
+6. Auf Windows läuft das Projekt ohne Ubuntu direkt mit Docker Desktop aus `C:\Projekte\ki-trading-bot` (Bind-Mount langsamer als
+   in WSL, für die aktuellen Datenmengen ausreichend).
+7. Freqtrade-Fehler im Ersatzpfad nach fehlgeschlagenem FreqAI-Training (`DataFrame` ohne `.dtype`); abgefangen, nicht behoben.
+8. GPU-Nutzung nicht geprüft (für die aktuellen Modelle nicht nötig).
+9. Pandas-Deprecation-Warnungen aus Freqtrade – harmlos, bei Updates beobachten.
 
 ## Nächster konkreter Schritt
 
-Repository festlegen, dann auf dem Windows-Rechner Phase 1 mit echten Daten abschließen und `compare` / `ml-compare`
-auf echten Daten ausführen (ROADMAP.md → „Nächste Schritte“).
+Entscheiden, ob die Strategie-/Modellentwicklung weitergeht (neue Hypothesen, nur auf Train/Validation prüfen) oder das
+System vorerst als Analysewerkzeug genutzt wird. Der Test-Abschnitt (05.11.2025 – 22.10.2026) bleibt gesperrt, bis ein
+Kandidat die Validation überzeugend besteht.
