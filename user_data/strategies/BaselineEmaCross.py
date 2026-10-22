@@ -12,10 +12,11 @@ from pandas import DataFrame
 
 import talib.abstract as ta
 from freqtrade.strategy import IStrategy, IntParameter
+from kitb.risk import RiskManagedMixin
 from technical import qtpylib
 
 
-class BaselineEmaCross(IStrategy):
+class BaselineEmaCross(RiskManagedMixin, IStrategy):
     INTERFACE_VERSION = 3
 
     timeframe = "1h"

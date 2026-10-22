@@ -8,10 +8,11 @@ from pandas import DataFrame
 from technical import qtpylib
 
 from freqtrade.strategy import IStrategy
+from kitb.risk import RiskManagedMixin
 from kitb import indicators as ind
 
 
-class MeanReversionBollinger(IStrategy):
+class MeanReversionBollinger(RiskManagedMixin, IStrategy):
     INTERFACE_VERSION = 3
     timeframe = "1h"
     can_short = False

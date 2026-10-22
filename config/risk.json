@@ -1,0 +1,15 @@
+{
+    "$comment": "Zentrale Risikolimits (Anteile des Kapitals). Gelten für alle Strategien und beide Bots identisch. Vor jedem Live-Betrieb ausdrücklich zu bestätigen.",
+    "max_position_fraction": 0.4,
+    "max_risk_per_trade_fraction": 0.02,
+    "max_total_exposure_fraction": 0.8,
+    "max_open_positions": 2,
+    "max_daily_loss_fraction": 0.03,
+    "max_drawdown_fraction": 0.15,
+    "max_data_age_candles": 2,
+    "max_stake_share_of_24h_volume": 0.01,
+    "leverage_allowed": false,
+    "futures_allowed": false,
+    "margin_allowed": false,
+    "withdrawals_allowed": false
+}

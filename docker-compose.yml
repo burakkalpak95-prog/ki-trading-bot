@@ -27,3 +27,25 @@ services:
     volumes:
       - ./config:/kitb/config:ro
       - ./user_data:/kitb/user_data
+
+  # Paper-Trading (Profil "paper"): Freqtrade-Dry-Run, virtuelles Kapital, keine Ports, keine API-Keys.
+  # Start: docker compose --profile paper up -d   ·   Stopp: docker compose --profile paper stop
+  # restart on-failure: nach Absturz automatischer Wiederanlauf (Zustand aus der Dry-Run-DB);
+  # nach Not-Stopp (geordnetes Beenden) KEIN automatischer Neustart.
+  paper-bot-a:
+    image: kitb:local
+    profiles: ["paper"]
+    command: ["paper", "run", "--bot", "bot_a"]
+    restart: on-failure
+    volumes:
+      - ./config:/kitb/config:ro
+      - ./user_data:/kitb/user_data
+
+  paper-bot-b:
+    image: kitb:local
+    profiles: ["paper"]
+    command: ["paper", "run", "--bot", "bot_b"]
+    restart: on-failure
+    volumes:
+      - ./config:/kitb/config:ro
+      - ./user_data:/kitb/user_data

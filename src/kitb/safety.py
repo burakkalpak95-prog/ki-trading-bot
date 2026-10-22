@@ -1,16 +1,17 @@
-"""Sicherheitsprüfungen für Phase 1.
+"""Sicherheitsprüfungen.
 
-In Phase 1 sind ausschließlich die Modi ``data`` und ``backtest`` erlaubt.
-Paper-Trading (Freqtrade ``trade`` mit dry_run) und Live-Trading sind gesperrt –
-unabhängig von Umgebungsvariablen oder Konfigurationswerten. Eine Freigabe
-erfordert eine Codeänderung in einer späteren, ausdrücklich freigegebenen Phase.
+Erlaubte Modi: ``data``, ``backtest`` und (ab Phase 7) ``paper`` – Paper-Trading ausschließlich als
+Freqtrade-Dry-Run ohne Zugangsdaten, gestartet über ``kitb paper``. **Live-Trading ist gesperrt** –
+unabhängig von Umgebungsvariablen oder Konfigurationswerten. Eine Freigabe erfordert eine
+Codeänderung nach separater Nutzerfreigabe und unabhängiger Prüfung (Phase 8).
 """
 
 from collections.abc import Iterable
 from typing import Any
 
-ALLOWED_RUN_MODES = frozenset({"data", "backtest"})
+ALLOWED_RUN_MODES = frozenset({"data", "backtest", "paper"})
 BLOCKED_FREQTRADE_COMMANDS = frozenset({"trade", "webserver"})
+PAPER_ONLY_COMMANDS = frozenset({"trade"})
 SECRET_KEYS = ("key", "secret", "password", "uid", "walletAddress", "privateKey")
 
 
@@ -21,14 +22,16 @@ class SafetyError(RuntimeError):
 def assert_run_mode_allowed(mode: str) -> None:
     if mode not in ALLOWED_RUN_MODES:
         raise SafetyError(
-            f"Modus '{mode}' ist in Phase 1 gesperrt. Erlaubt: {sorted(ALLOWED_RUN_MODES)}. "
-            "Paper- und Live-Trading werden erst nach ausdrücklicher Freigabe implementiert."
+            f"Modus '{mode}' ist gesperrt. Erlaubt: {sorted(ALLOWED_RUN_MODES)}. "
+            "Live-Trading erst nach separater Freigabe und unabhängiger Prüfung."
         )
 
 
-def assert_freqtrade_command_allowed(command: str) -> None:
+def assert_freqtrade_command_allowed(command: str, mode: str | None = None) -> None:
+    if command in PAPER_ONLY_COMMANDS and mode == "paper":
+        return
     if command in BLOCKED_FREQTRADE_COMMANDS:
-        raise SafetyError(f"Freqtrade-Befehl '{command}' ist in Phase 1 gesperrt.")
+        raise SafetyError(f"Freqtrade-Befehl '{command}' ist gesperrt (nur 'trade' im Paper-Modus über kitb).")
 
 
 def check_freqtrade_config(
@@ -81,3 +84,16 @@ def assert_safe_freqtrade_config(
     problems = check_freqtrade_config(config, allowed_exchanges, allowed_pairs)
     if problems:
         raise SafetyError("Unsichere Konfiguration:\n- " + "\n- ".join(problems))
+
+
+def check_paper_config(config: dict[str, Any], allowed_exchanges: Iterable[str],
+                       allowed_pairs: Iterable[str], paper_root: str) -> list[str]:
+    """Wie ``check_freqtrade_config``, aber für den laufenden Dry-Run-Bot (initial_state darf 'running' sein)."""
+    cfg = {**config, "initial_state": "stopped"}
+    problems = check_freqtrade_config(cfg, allowed_exchanges, allowed_pairs)
+    db_url = str(config.get("db_url", ""))
+    if "dryrun" not in db_url or paper_root not in db_url:
+        problems.append("db_url muss eine Dry-Run-Datenbank unter user_data/paper sein.")
+    if config.get("initial_state") not in ("running", "stopped"):
+        problems.append("initial_state ungültig.")
+    return problems

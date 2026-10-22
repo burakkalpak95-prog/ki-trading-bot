@@ -7,10 +7,11 @@ Ausstieg: Close < Tief der vorherigen 10 Kerzen. Stoploss −8 %.
 from pandas import DataFrame
 
 from freqtrade.strategy import IStrategy
+from kitb.risk import RiskManagedMixin
 from kitb import indicators as ind
 
 
-class BreakoutDonchian(IStrategy):
+class BreakoutDonchian(RiskManagedMixin, IStrategy):
     INTERFACE_VERSION = 3
     timeframe = "1h"
     can_short = False

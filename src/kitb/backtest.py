@@ -65,6 +65,20 @@ def exposure(trades: list[dict], start: str, end: str, n_slots: int) -> float | 
     return round(in_market / total, 4)
 
 
+def risk_halt_point(trades: list[dict], starting_balance: float) -> str | None:
+    """Erster Trade-Schluss, an dem der realisierte Drawdown das Risikolimit erreicht."""
+    from kitb.risk import RiskLimits
+
+    limit = RiskLimits.load().max_drawdown_fraction
+    equity = peak = starting_balance
+    for t in sorted(trades, key=lambda t: t["close_timestamp"]):
+        equity += t["profit_abs"]
+        peak = max(peak, equity)
+        if 1 - equity / peak >= limit:
+            return str(t["close_date"])
+    return None
+
+
 def summarize(strategy_stats: dict[str, Any], cost_model: CostModel) -> dict[str, Any]:
     """Relevante Kennzahlen aus den Freqtrade-Ergebnissen ziehen."""
     trades = strategy_stats.get("trades", [])
@@ -86,6 +100,7 @@ def summarize(strategy_stats: dict[str, Any], cost_model: CostModel) -> dict[str
         "exposure": exposure(trades, strategy_stats["backtest_start"], strategy_stats["backtest_end"],
                              int(strategy_stats.get("max_open_trades", 1))),
         "low_sample_warning": n < MIN_TRADES_FOR_STATS,
+        "risk_halt_would_trigger_at": risk_halt_point(trades, float(strategy_stats.get("starting_balance") or 0)),
     })
     return out
 

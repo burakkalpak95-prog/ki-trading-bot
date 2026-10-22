@@ -1,6 +1,6 @@
-"""Kommandozeile ``kitb``. Bietet in Phase 1 nur Daten- und Backtest-Befehle.
+"""Kommandozeile ``kitb``: Daten, Backtests, Auswertungen, Modellverwaltung, Dashboard, Paper-Trading.
 
-Es gibt bewusst keinen Befehl zum Starten von Paper- oder Live-Trading.
+Es gibt bewusst keinen Befehl für Live-Trading.
 """
 
 import argparse
@@ -258,6 +258,37 @@ def cmd_killswitch(args) -> int:
     return 0
 
 
+def cmd_paper(args) -> int:
+    from kitb import paper
+
+    bots = list(load_project_config()["bots"]) if args.bot == "all" else [args.bot]
+    if args.action in ("start", "run"):
+        if args.action == "run" and len(bots) != 1:
+            print("'run' (Vordergrund, z. B. Docker) nur für einen Bot.", file=sys.stderr)
+            return 2
+        from kitb import killswitch
+
+        if args.action == "run" and killswitch.is_active():
+            # Kein Fehlercode: sonst würde Docker (restart: on-failure) endlos neu starten.
+            print("Not-Stopp aktiv – Paper-Bot startet nicht.", file=sys.stderr)
+            return 0
+        rc = 0
+        for bot in bots:
+            rc |= paper.start(bot, foreground=args.action == "run")
+            if args.action == "start":
+                print(f"{bot}: Paper-Trading gestartet (Dry-Run, virtuelles Kapital).")
+        return rc
+    if args.action == "stop":
+        for bot in bots:
+            print(f"{bot}: {'gestoppt' if paper.stop(bot) else 'lief nicht'}")
+        return 0
+    if args.action == "report":
+        print(paper.report())
+        return 0
+    _print([paper.status(b) for b in bots])
+    return 0
+
+
 def cmd_runs(args) -> int:
     _print(Registry(paths.REGISTRY_DB).fetch(args.table, args.limit))
     return 0
@@ -362,6 +393,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--reason")
     s.add_argument("--by")
     s.set_defaults(func=cmd_killswitch)
+
+    s = sub.add_parser("paper", help="Paper-Trading (Dry-Run, virtuelles Kapital): start/stop/status/run")
+    s.add_argument("action", choices=["start", "stop", "status", "run", "report"])
+    s.add_argument("--bot", default="all", choices=["bot_a", "bot_b", "all"])
+    s.set_defaults(func=cmd_paper)
 
     s = sub.add_parser("runs", help="Protokoll anzeigen")
     s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs", "decisions",

@@ -42,13 +42,13 @@ def test_unsafe_configs_are_rejected(mutate):
         assert_safe_freqtrade_config(cfg, EX, PAIRS)
 
 
-@pytest.mark.parametrize("mode", ["paper", "live", "trade", "dry_run", ""])
+@pytest.mark.parametrize("mode", ["live", "trade", "dry_run", "real", ""])
 def test_trading_modes_blocked(mode):
     with pytest.raises(SafetyError):
         assert_run_mode_allowed(mode)
 
 
-@pytest.mark.parametrize("mode", ["data", "backtest"])
+@pytest.mark.parametrize("mode", ["data", "backtest", "paper"])
 def test_research_modes_allowed(mode):
     assert_run_mode_allowed(mode)
 
@@ -57,10 +57,18 @@ def test_research_modes_allowed(mode):
 def test_freqtrade_trade_commands_blocked(cmd):
     with pytest.raises(SafetyError):
         assert_freqtrade_command_allowed(cmd)
+    with pytest.raises(SafetyError):
+        assert_freqtrade_command_allowed(cmd, mode="live")
+
+
+def test_trade_only_in_paper_mode():
+    assert_freqtrade_command_allowed("trade", mode="paper")
+    with pytest.raises(SafetyError):
+        assert_freqtrade_command_allowed("webserver", mode="paper")
 
 
 def test_cli_has_no_trading_command():
     from kitb.cli import build_parser
 
     sub = next(a for a in build_parser()._actions if a.dest == "command")
-    assert not {"trade", "paper", "live", "dry-run"} & set(sub.choices)
+    assert not {"trade", "live", "dry-run"} & set(sub.choices)
