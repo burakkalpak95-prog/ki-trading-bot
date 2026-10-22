@@ -9,7 +9,8 @@ import kitb.agents.core as core
 from kitb.agents import AGENT_COLUMNS, Agent, Coordinator, CycleError, default_agents
 from kitb.config import load_project_config
 from kitb.data.synthetic import generate_hourly
-from test_strategy_lookahead import load_strategy, signals
+from kitb.strategies import load_strategy
+from test_strategy_lookahead import signals
 
 
 @pytest.fixture(scope="module")

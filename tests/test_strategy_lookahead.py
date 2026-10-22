@@ -1,34 +1,18 @@
 """Keine Strategie darf Zukunftsdaten nutzen: Signale auf abgeschnittenen Daten
 müssen identisch zu den Signalen auf dem vollen Datensatz sein."""
 
-import importlib.util
-
 import pandas as pd
 import pytest
 
-from kitb import paths
+from kitb.strategies import compute_signals, load_strategy
 from kitb.config import load_project_config
 from kitb.data.synthetic import generate_hourly
 
 STRATEGIES = load_project_config()["evaluation"]["strategies"]
 
 
-def load_strategy(name):
-    spec = importlib.util.spec_from_file_location(name, paths.USER_DATA / "strategies" / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return getattr(mod, name)({"timeframe": "1h", "stake_currency": "USDT", "runmode": None})
-
-
 def signals(strategy, df):
-    meta = {"pair": "BTC/USDT"}
-    out = strategy.populate_indicators(df.copy(), meta)
-    out = strategy.populate_entry_trend(out, meta)
-    out = strategy.populate_exit_trend(out, meta)
-    for col in ("enter_long", "exit_long"):
-        if col not in out:
-            out[col] = 0
-    return out[["enter_long", "exit_long"]].fillna(0).astype(int)
+    return compute_signals(strategy, df)[["enter_long", "exit_long"]]
 
 
 @pytest.fixture(scope="module")

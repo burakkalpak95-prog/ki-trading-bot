@@ -1,4 +1,5 @@
-# Phase 1: nur Datenabruf und Backtests. Kein Trading-Dienst, KEINE Ports nach außen.
+# Standarddienst `kitb`: Daten, Backtests, Auswertungen – ohne Ports.
+# `dashboard` (Profil "dashboard"): nur an 127.0.0.1 des Rechners gebunden, nicht aus dem Netzwerk erreichbar.
 # Beispiele:
 #   docker compose build
 #   docker compose run --rm kitb check-safety
@@ -16,3 +17,13 @@ services:
       - ./user_data:/kitb/user_data
       - ./tests:/kitb/tests:ro
       - ./pyproject.toml:/kitb/pyproject.toml:ro
+
+  dashboard:
+    image: kitb:local
+    profiles: ["dashboard"]
+    command: ["dashboard", "--address", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - ./config:/kitb/config:ro
+      - ./user_data:/kitb/user_data

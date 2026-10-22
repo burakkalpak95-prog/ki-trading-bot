@@ -235,6 +235,29 @@ def cmd_agents_evaluate(args) -> int:
     return 0
 
 
+def cmd_dashboard(args) -> int:
+    import subprocess
+
+    app = Path(__file__).parent / "dashboard" / "app.py"
+    # Nur lokal erreichbar (127.0.0.1), keine Telemetrie.
+    cmd = [sys.executable, "-m", "streamlit", "run", str(app), "--server.address", args.address,
+           "--server.port", str(args.port), "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+    return subprocess.call(cmd)
+
+
+def cmd_killswitch(args) -> int:
+    from kitb import killswitch
+
+    if args.action == "on":
+        print(f"Not-Stopp aktiv: {killswitch.activate(args.reason or 'manuell', args.by or 'unbekannt')}")
+    elif args.action == "off":
+        killswitch.reset(args.by)
+        print("Not-Stopp zurückgesetzt.")
+    else:
+        _print(killswitch.info() or {"active": False})
+    return 0
+
+
 def cmd_runs(args) -> int:
     _print(Registry(paths.REGISTRY_DB).fetch(args.table, args.limit))
     return 0
@@ -327,6 +350,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--source", default="binance")
     s.add_argument("--offline-markets", action="store_true")
     s.set_defaults(func=cmd_agents_evaluate)
+
+    s = sub.add_parser("dashboard", help="Lokales Dashboard starten (http://127.0.0.1:8501)")
+    s.add_argument("--address", default="127.0.0.1", choices=["127.0.0.1", "0.0.0.0"],
+                   help="0.0.0.0 nur im Docker-Container (Port wird dort nur an 127.0.0.1 veröffentlicht)")
+    s.add_argument("--port", type=int, default=8501)
+    s.set_defaults(func=cmd_dashboard)
+
+    s = sub.add_parser("kill-switch", help="Not-Stopp: on/off/status")
+    s.add_argument("action", choices=["on", "off", "status"])
+    s.add_argument("--reason")
+    s.add_argument("--by")
+    s.set_defaults(func=cmd_killswitch)
 
     s = sub.add_parser("runs", help="Protokoll anzeigen")
     s.add_argument("table", choices=["source_events", "validation_reports", "backtest_runs", "decisions",

@@ -19,6 +19,7 @@ dev = ["pytest==9.1.1"]
 # Entspricht requirements-freqai.txt von Freqtrade 2026.9 (im Docker-Image ...:2026.9_freqai enthalten)
 ml = ["scikit-learn==1.9.1", "joblib==1.6.0", "cloudpickle==3.1.2", "lightgbm==4.7.0", "xgboost==3.2.0",
       "datasieve==0.1.9"]
+dashboard = ["streamlit==1.66.1", "plotly==7.1.0"]
 
 [project.scripts]
 kitb = "kitb.cli:main"
