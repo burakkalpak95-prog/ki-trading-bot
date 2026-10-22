@@ -136,7 +136,9 @@ def run_freqtrade_backtest(
     project = load_project_config()
     config_path = config_path or paths.FREQTRADE_BASE_CONFIG
     ft_config = load_freqtrade_config(config_path)
-    assert_safe_freqtrade_config(ft_config, project["allowed_exchanges"], project["allowed_pairs"])
+    # Backtests handeln nicht: zusätzlich die Lernmärkte zulassen (KI-Gedächtnis). Paper/Live prüfen getrennt.
+    assert_safe_freqtrade_config(ft_config, project["allowed_exchanges"],
+                                 project["allowed_pairs"] + project.get("learning_pairs", []))
     cost_model = CostModel.from_project_config(project)
     pairs = ft_config["exchange"]["pair_whitelist"]
     synthetic = is_synthetic_dir(datadir)

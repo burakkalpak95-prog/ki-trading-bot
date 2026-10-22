@@ -250,3 +250,18 @@ def test_paper_status_detects_bot_in_other_container_via_log(tmp_path):
     old = time.time() - paper.HEARTBEAT_MAX_AGE_S - 60
     os.utime(log, (old, old))
     assert paper.status("trend_d1", ud)["running"] is False
+
+
+def test_learn_broad_trade_narrow(reg, tmp_path):
+    """Sammler/KI-Lernbots: zusätzliche Lernmärkte; Kandidat trend_d1 bleibt bei BTC/ETH."""
+    from kitb import strategy_approval
+    from kitb.config import load_project_config
+
+    project = load_project_config()
+    for i in ("trend_d1", "donchian_1h", "bot_a"):
+        strategy_approval.approve(reg, i, by="Burak", reason="Test")
+    narrow = paper.build_paper_config("trend_d1", reg, tmp_path / "ud")[1]["exchange"]["pair_whitelist"]
+    broad = paper.build_paper_config("donchian_1h", reg, tmp_path / "ud")[1]["exchange"]["pair_whitelist"]
+    learn = paper.build_paper_config("bot_a", reg, tmp_path / "ud")[1]["exchange"]["pair_whitelist"]
+    assert narrow == project["allowed_pairs"] == ["BTC/USDT", "ETH/USDT"]
+    assert broad == learn == project["learning_pairs"] and len(broad) > 2

@@ -56,7 +56,8 @@ def cmd_download(args) -> int:
     project = load_project_config()
     datadir = paths.DATA_DIR / args.exchange
     reg = Registry(paths.REGISTRY_DB)
-    proc = download_with_freqtrade(paths.FREQTRADE_BASE_CONFIG, args.exchange, project["allowed_pairs"],
+    pairs = project["learning_pairs"] if getattr(args, "pairs", "trading") == "learning" else project["allowed_pairs"]
+    proc = download_with_freqtrade(paths.FREQTRADE_BASE_CONFIG, args.exchange, pairs,
                                    args.timeframes or project["timeframes"], datadir, args.timerange, args.days)
     status = "ok" if proc.returncode == 0 else "failed"
     reg.log_source_event(args.exchange, "download", status, {
@@ -66,7 +67,7 @@ def cmd_download(args) -> int:
     sys.stderr.write(proc.stderr[-4000:])
     if proc.returncode != 0:
         return proc.returncode
-    _trim_incomplete(datadir, project["allowed_pairs"], args.timeframes or project["timeframes"])
+    _trim_incomplete(datadir, pairs, args.timeframes or project["timeframes"])
     return _validate_dir(datadir, args.exchange, args.timeframes or project["timeframes"], live_check=True)
 
 
@@ -389,6 +390,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("download", help="Historische Daten via freqtrade download-data")
     s.add_argument("--exchange", default="binance")
     s.add_argument("--timeframes", nargs="+")
+    s.add_argument("--pairs", choices=["trading", "learning"], default="trading",
+                   help="trading = allowed_pairs (BTC/ETH), learning = zusätzlich die Lernmärkte fürs KI-Gedächtnis")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--timerange", help="z. B. 20220101-")
     g.add_argument("--days", type=int)

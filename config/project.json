@@ -9,6 +9,17 @@
         "BTC/USDT",
         "ETH/USDT"
     ],
+    "$comment_learning_pairs": "Nur zum Lernen (Paper-Bots im Modus explore/learning, Backtests fürs KI-Gedächtnis). Gehandelt wird als Kandidat und später ausschließlich allowed_pairs. Freigabe Burak 22.10.2026: breit lernen, eng handeln.",
+    "learning_pairs": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "SOL/USDT",
+        "XRP/USDT",
+        "BNB/USDT",
+        "ADA/USDT",
+        "DOGE/USDT",
+        "LINK/USDT"
+    ],
     "timeframes": [
         "1h",
         "1d"

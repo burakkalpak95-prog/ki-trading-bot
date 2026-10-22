@@ -148,8 +148,20 @@ def seed_from_backtests(*, datadir: Path, data_source: str, user_data: Path | No
     """Einmalig: historische Trades der Datensammler-Strategien als Startwissen ins Gedächtnis legen."""
     from kitb.backtest import run_freqtrade_backtest
 
+    import tempfile
+
+    from kitb.config import load_freqtrade_config
+
     project = load_project_config()
     fleet = {v["strategy"] for v in project.get("paper_strategies", {}).values() if v.get("mode") == "explore"}
+    # Breit lernen: alle Lernmärkte, für die lokale Daten vorliegen (kitb download --pairs learning).
+    pairs = [p for p in project.get("learning_pairs", project["allowed_pairs"])
+             if all((datadir / f"{p.replace('/', '_')}-{tf}.parquet").exists() for tf in ("1h", "1d"))
+             ] or project["allowed_pairs"]
+    ft = load_freqtrade_config()
+    ft["exchange"] = {**ft["exchange"], "pair_whitelist": pairs}
+    tmp_cfg = Path(tempfile.mkdtemp()) / "seed-config.json"
+    tmp_cfg.write_text(json.dumps(ft), encoding="utf-8")
     daily = {s for s in fleet if s in project["evaluation"].get("daily_strategies", [])}
     rows = []
     for tf, strategies in (("1h", sorted(fleet - daily)), ("1d", sorted(daily))):
@@ -158,7 +170,7 @@ def seed_from_backtests(*, datadir: Path, data_source: str, user_data: Path | No
         try:
             res = run_freqtrade_backtest(strategies=strategies, timeframe=tf, timerange=None, datadir=datadir,
                                          data_source=data_source, offline=offline, registry=None,
-                                         results_dir=None, config_path=None)
+                                         results_dir=None, config_path=tmp_cfg)
         except Exception as e:  # noqa: BLE001 – z. B. zu wenig Tageskerzen: übrige Zeitintervalle trotzdem nutzen
             log.warning("Startwissen %s nicht erzeugt: %s", tf, e)
             continue

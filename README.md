@@ -72,6 +72,7 @@ Lernlauf. Nur virtuelles Kapital (je Bot und Runde 10.000 USDT). Einmalig:
 
 ```bash
 docker compose run --rm kitb strategies approve --id fleet --by "Burak" --reason "Lernende Flotte"
+docker compose run --rm kitb download --exchange binance --pairs learning --timerange 20220101-   # Lernmärkte
 docker compose run --rm kitb memory seed      # Startwissen aus historischen Backtests
 docker compose run --rm kitb memory daily     # erstes Training
 docker compose --profile paper-learn up -d    # Flotte + täglicher Lernlauf (Dienst ai-memory)

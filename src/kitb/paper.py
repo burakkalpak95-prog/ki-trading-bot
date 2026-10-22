@@ -82,13 +82,23 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
         "kitb_mode": "learning" if learning else "approved_model",
         "kitb_strategy_approval_id": learning["id"] if learning else None,
     })
-    problems = check_paper_config(cfg, project["allowed_exchanges"], project["allowed_pairs"],
+    pairs = project["allowed_pairs"]
+    if learning:
+        pairs = _use_learning_pairs(cfg, project)
+    problems = check_paper_config(cfg, project["allowed_exchanges"], pairs,
                                   str((user_data_dir or paths.USER_DATA).resolve() / "paper"))
     if problems:
         raise SafetyError("Unsichere Paper-Konfiguration:\n- " + "\n- ".join(problems))
     path = d / "config.json"
     path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return path, cfg
+
+
+def _use_learning_pairs(cfg: dict[str, Any], project: dict[str, Any]) -> list[str]:
+    """Lern-/Sammler-Bots handeln (virtuell) zusätzlich die Lernmärkte; Kandidaten bleiben bei allowed_pairs."""
+    pairs = project.get("learning_pairs") or project["allowed_pairs"]
+    cfg["exchange"] = {**cfg["exchange"], "pair_whitelist": list(pairs)}
+    return list(pairs)
 
 
 def _build_rule_config(paper_id: str, reg: Registry, project: dict[str, Any],
@@ -112,7 +122,10 @@ def _build_rule_config(paper_id: str, reg: Registry, project: dict[str, Any],
                                and project.get("paper_learning", {}).get("apply_ai_filter")),
     })
     cfg.pop("timeframe", None)  # Zeitintervall kommt aus der Strategie (z. B. 1d)
-    problems = check_paper_config(cfg, project["allowed_exchanges"], project["allowed_pairs"],
+    pairs = project["allowed_pairs"]
+    if cfg["kitb_mode"] == "explore":
+        pairs = _use_learning_pairs(cfg, project)
+    problems = check_paper_config(cfg, project["allowed_exchanges"], pairs,
                                   str((user_data_dir or paths.USER_DATA).resolve() / "paper"))
     if problems:
         raise SafetyError("Unsichere Paper-Konfiguration:\n- " + "\n- ".join(problems))

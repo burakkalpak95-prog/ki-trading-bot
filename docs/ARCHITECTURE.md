@@ -199,3 +199,6 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   Der Filter kann nur ablehnen, nie ein Risikolimit aufheben. Versionen in `ai_filter_versions`.
 - Seite „Was hat die KI gelernt?“: Trefferquote heute vs. Version 1 (%-Punkte), Vorsprung vor Raten, Filter-Vorteil je
   Trade, Gedächtnisgröße, wichtigste Merkmale, Ampel. Alles nur virtuelles Kapital; Live bleibt gesperrt.
+- **Breit lernen, eng handeln** (Freigabe Burak, 22.10.2026): `learning_pairs` (BTC, ETH + SOL, XRP, BNB, ADA, DOGE, LINK)
+  gelten nur für Paper-Bots im Modus explore/learning und für Backtests des KI-Gedächtnisses. Kandidaten (trend_d1) und
+  alles darüber hinaus bleiben bei `allowed_pairs` (BTC/ETH); die Sicherheitsprüfung unterscheidet das je Modus.
