@@ -202,3 +202,17 @@ def test_rule_strategy_paper_requires_human_approval(reg, tmp_path):
 
 def test_paper_ids_include_rule_strategies():
     assert paper.paper_ids() == ["bot_a", "bot_b", "trend_d1"]
+
+
+def test_paper_status_detects_bot_in_other_container_via_log(tmp_path):
+    import os
+    import time
+
+    ud = tmp_path / "ud"
+    log = paper.paper_dir("trend_d1", ud) / "freqtrade.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("Bot heartbeat. state='RUNNING'\n")
+    assert paper.status("trend_d1", ud)["running"] is True
+    old = time.time() - paper.HEARTBEAT_MAX_AGE_S - 60
+    os.utime(log, (old, old))
+    assert paper.status("trend_d1", ud)["running"] is False

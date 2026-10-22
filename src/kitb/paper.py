@@ -123,6 +123,16 @@ def _alive(pid: int) -> bool:
         return False
 
 
+HEARTBEAT_MAX_AGE_S = 180
+
+
+def _log_age_seconds(bot: str, user_data_dir: Path | None = None) -> float | None:
+    import time
+
+    log_path = paper_dir(bot, user_data_dir) / "freqtrade.log"
+    return time.time() - log_path.stat().st_mtime if log_path.exists() else None
+
+
 def start(bot: str, *, foreground: bool, user_data_dir: Path | None = None) -> int:
     assert_run_mode_allowed("paper")
     assert_freqtrade_command_allowed("trade", mode="paper")
@@ -161,8 +171,14 @@ def status(bot: str, user_data_dir: Path | None = None) -> dict[str, Any]:
     from kitb.dashboard.data import paper_summary, risk_state
 
     pid_path = _pidfile(bot, user_data_dir)
-    running = pid_path.exists() and _alive(int(pid_path.read_text()))
-    return {"bot": bot, "running": running, "kill_switch": killswitch.info(user_data_dir),
+    heartbeat_age = _log_age_seconds(bot, user_data_dir)
+    # Im Docker-Betrieb läuft der Bot in einem eigenen Container (keine PID-Datei, anderer Prozessraum);
+    # dann gilt er als laufend, solange sein Log frisch ist (Freqtrade-Heartbeat standardmäßig alle 60 s).
+    running = (pid_path.exists() and _alive(int(pid_path.read_text()))) or (
+        heartbeat_age is not None and heartbeat_age <= HEARTBEAT_MAX_AGE_S)
+    return {"bot": bot, "running": running,
+            "log_age_seconds": None if heartbeat_age is None else round(heartbeat_age),
+            "kill_switch": killswitch.info(user_data_dir),
             "summary": paper_summary(bot, load_freqtrade_config()["dry_run_wallet"], user_data_dir),
             "risk": risk_state(user_data_dir).get(bot)}
 

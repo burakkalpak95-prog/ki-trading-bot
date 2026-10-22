@@ -1,7 +1,7 @@
 # Projektstand
 
 **Stand:** 22.10.2026 · **Phasen:** 1–8 umgesetzt (Code + Tests); **echte Daten auf dem Zielrechner ausgewertet**
-**Handelsmodus:** keiner aktiv · Paper-Trading vorbereitet (Dry-Run) · Live-Trading gesperrt
+**Handelsmodus:** Paper-Trading (Dry-Run, virtuelles Kapital) mit DailyTrendSma seit 22.10.2026 · Live-Trading gesperrt
 
 ## Umgesetzt je Phase
 
@@ -146,6 +146,14 @@ Test-Abschnitt ist damit verbraucht; künftige Varianten brauchen neue, ungesehe
 **Paper-Trading für Regel-Strategien** (ADR-015): `paper_strategies.trend_d1` = DailyTrendSma, Start nur nach namentlicher
 Freigabe (`kitb strategies approve`), eigenes Compose-Profil `paper-trend`. Tests (Cloud-venv): 171 bestanden.
 
+**Paper-Start (22.10.2026, 22:12 UTC, Windows-Rechner, `C:\Projekte\ki-trading-bot-paper`):** Freigabe durch Burak
+(„Vorperiode und Test bestanden“), Start durch Burak selbst. Tests auf dem Rechner: 171 bestanden. Lesend geprüft:
+Container läuft ohne Neustarts und ohne Ports, „Dry run is enabled“, Spot, keine Keys, Telegram aus, DailyTrendSma 1d,
+keine Fehler im Log. Beim Start sofort zwei simulierte Einstiege (BTC zu 81.498, ETH zu 2.393, je ≈ 1.980 USDT), weil
+beide über der SMA200 schließen – das entspricht der Backtest-Logik (Einstieg nach Zustand, nicht nach Kreuzung).
+Einsatzhöhe: vermutlich 2 % Risiko / 10 % Stoploss = 20 % von 9.900 USDT handelbarem Kapital (Unsicher, nicht nachgerechnet).
+Nächste Entscheidung des Bots jeweils nach Tagesschluss 00:00 UTC. PC und Docker Desktop müssen dafür laufen.
+
 ## Erreichte Datenquellen (22.10.2026)
 
 | Quelle | Ergebnis |
@@ -162,8 +170,8 @@ Freigabe (`kitb strategies approve`), eigenes Compose-Profil `paper-trend`. Test
 
 ## Offene Punkte / bekannte Probleme
 
-1. **Kein Vorteil gegenüber Buy&Hold** auf echten Daten – weder Regel-Strategien noch KI-Bots. Ohne neue Idee (andere Features,
-   Labels, Zeitintervalle oder Strategieform) ist Paper-Trading derzeit nicht sinnvoll.
+1. 1h-Regel-Strategien und KI-Bots ohne Vorteil gegenüber Buy&Hold. Einzig DailyTrendSma hat Vorperiode und Test bestanden
+   (wenige Trades, kein statistischer Beleg) und läuft jetzt im Paper-Trading.
 2. `agents-evaluate`: Kriterium verschärft (Runde 2); Ergebnis auf echten Daten ausstehend.
 3. Leicht unterschiedliche Train-Ergebnisse je nach Lauf: Ursache gefunden (Freqtrade-Vorlauf = Maximum der Strategien), in Runde 2 behoben.
 4. Gebühr 0,10 % bei Binance für das eigene Konto prüfen; Slippage/Spread sind Schätzungen.
@@ -173,9 +181,13 @@ Freigabe (`kitb strategies approve`), eigenes Compose-Profil `paper-trend`. Test
 7. Freqtrade-Fehler im Ersatzpfad nach fehlgeschlagenem FreqAI-Training (`DataFrame` ohne `.dtype`); abgefangen, nicht behoben.
 8. GPU-Nutzung nicht geprüft (für die aktuellen Modelle nicht nötig).
 9. Pandas-Deprecation-Warnungen aus Freqtrade – harmlos, bei Updates beobachten.
+10. `paper status` meldete im Docker-Betrieb `running: false` (Bot in eigenem Container, keine PID-Datei); behoben: Erkennung
+    zusätzlich über frisches Freqtrade-Log (≤ 180 s). Der Risikozustand (`risk`) ist eine Momentaufnahme **vor** der letzten
+    Einstiegsentscheidung und zählt die gerade eröffnete Position noch nicht.
+11. Systemuhr des Windows-Rechners weicht laut Freqtrade um ca. 4 s von Binance ab (für 1d unkritisch).
 
 ## Nächster konkreter Schritt
 
-Entscheiden, ob die Strategie-/Modellentwicklung weitergeht (neue Hypothesen, nur auf Train/Validation prüfen) oder das
-System vorerst als Analysewerkzeug genutzt wird. Der Test-Abschnitt (05.11.2025 – 22.10.2026) bleibt gesperrt, bis ein
-Kandidat die Validation überzeugend besteht.
+Paper-Trading von DailyTrendSma mehrere Wochen bis Monate laufen lassen und regelmäßig mit `kitb paper status --bot trend_d1`
+und `kitb paper report` auswerten. Eine Tagesstrategie handelt selten; belastbare Aussagen brauchen lange Laufzeit.
+Live-Trading bleibt gesperrt (separate Freigabe und unabhängige Prüfung nötig).
