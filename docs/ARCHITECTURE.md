@@ -317,3 +317,6 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   lässt sich vorab prüfen, ob eine Schlagzeilen-Bewertung (Wortliste oder lokales Sprachmodell) Kurse vorhersagt.
   Verworfen: GDELT-Doc-API (offiziell nur 3 Monate Verlauf), awesome-freqtrade/FreqAI-Topic (keine Datenquellen,
   nur Indikator-Schnipsel), Blockchain.com-Charts (On-Chain schon über Coin Metrics, API-Format nicht verifiziert).
+- **Ergebnis Schlagzeilen-Test (23.10.2026, 23.301 Schlagzeilen, qwen2.5:7b über Ollama):** Weder Wortliste noch
+  Sprachmodell sagen die Rendite nach 1 h/4 h/24 h voraus (alle |t| < 1,7, Vorzeichen früh/spät uneinheitlich).
+  Entscheidung: kein dauerhaftes Sprachmodell; Schlagzeilen bleiben nur Aufzeichnung (kein Merkmal).
