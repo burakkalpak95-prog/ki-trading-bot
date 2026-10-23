@@ -113,3 +113,12 @@ def test_learning_ais_get_six_slots_within_exposure_limit(tmp_path):
     for bot in ("trend_d1", "donchian_15m"):
         _, cfg = paper.build_paper_config(bot, reg, tmp_path / "ud")
         assert cfg["max_open_trades"] == lim.max_open_positions and "kitb_max_open_positions" not in cfg
+
+
+def test_tests_never_touch_real_user_data():
+    from pathlib import Path
+
+    from kitb import killswitch
+
+    real = Path(__file__).resolve().parents[1] / "user_data"
+    assert paths.USER_DATA != real and killswitch.path() != real / "KILL_SWITCH"
