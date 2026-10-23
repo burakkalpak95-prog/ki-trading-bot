@@ -23,6 +23,7 @@ SOURCE_TEXT = {
     "taker": "Kaufdruck (Binance, 15 Min.)", "funding": "Finanzierungsrate Terminmarkt (Binance)",
     "ratio": "Long/Short + offene Positionen (Binance)", "depth": "Orderbuch (Binance, ab jetzt aufgezeichnet)",
     "news": "Schlagzeilen mit Stimmung (Google News, ab jetzt aufgezeichnet)",
+    "alpha": "Formel-Faktoren: Rang unter allen Coins (aus Tageskerzen)",
     "fear_greed": "Krypto Fear & Greed", "vix": "VIX (FRED)", "us10y": "US-Zinsen 10 J. (FRED)",
     "dollar": "Dollar-Index (FRED)", "spx": "S&P 500 (FRED)", "ndx": "Nasdaq 100 (FRED)",
     "dvol_btc": "Volatilitätsindex BTC (Deribit)", "dvol_eth": "Volatilitätsindex ETH (Deribit)",

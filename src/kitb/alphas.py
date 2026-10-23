@@ -140,6 +140,27 @@ FACTORS: dict[str, Callable[[dict[str, pd.DataFrame]], pd.DataFrame]] = {
 }
 
 
+# Am PC 23.10.2026 (16 Coins, Tageskerzen 2022–11/2025) in beiden Zeiträumen „lebt“; gleichartige zusammengefasst.
+# Alle zeigen dieselbe Richtung: ruhige, liquide Coins nahe am 60-Tage-Hoch laufen in den Folgetagen besser als
+# schwankende/illiquide. Nur Zusatz-Merkmal für die KIs, kein eigenes Handelssignal.
+LIVE = ["ts_klen", "x_illiq20", "x_vol20", "x_beta60", "x_high60", "ts_corr20"]
+
+
+def daily_ranks(panel: dict[str, pd.DataFrame], names: list[str] | None = None) -> dict[str, pd.DataFrame]:
+    """Je Coin eine Tabelle: Datum (Tagesbeginn) + Rang des Faktors unter allen Coins an diesem Tag (−0,5 … +0,5)."""
+    names = names or LIVE
+    ranks = {}
+    for n in names:
+        with np.errstate(all="ignore"):
+            ranks[n] = rank(FACTORS[n](panel).replace([np.inf, -np.inf], np.nan)) - 0.5
+    out = {}
+    for pair in panel["close"].columns:
+        df = pd.DataFrame({f"alpha_{n}": ranks[n][pair] for n in names})
+        df.index.name = "date"
+        out[pair] = df.dropna(how="all").reset_index()
+    return out
+
+
 # --- Daten und Bewertung ---
 
 def load_panel(pairs: list[str], datadir: Path) -> dict[str, pd.DataFrame]:

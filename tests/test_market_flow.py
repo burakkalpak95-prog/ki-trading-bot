@@ -190,3 +190,26 @@ def test_archive_backfill_maps_misleading_columns(tmp_path):
     calls.clear()
     market_flow.backfill_ratios("BTC/USDT", ud, days=3, get_bytes=fake_bytes, today=pd.Timestamp("2026-09-03", tz="UTC"))
     assert not any(c.endswith("2026-09-01.zip") for c in calls)  # vorhandene Tage nicht erneut laden
+
+
+def test_alpha_ranks_from_daily_klines_without_lookahead(tmp_path):
+    days = pd.date_range(T0 - pd.Timedelta(days=150), T0, freq="D")
+    rng = np.random.default_rng(5)
+    pairs = [f"C{i}/USDT" for i in range(8)]
+    walks = {p: 100 * np.exp(np.cumsum(rng.normal(0, 0.03, len(days)))) for p in pairs}
+
+    def get(url, params):
+        assert params["interval"] == "1d"
+        c = walks[params["symbol"].replace("USDT", "/USDT")]
+        return [[_ms(d), str(c[i] * 0.99), str(c[i] * 1.02), str(c[i] * 0.97), str(c[i]), str(1000 + i),
+                 _ms(d + pd.Timedelta(days=1)) - 1] for i, d in enumerate(days)]
+
+    ud = tmp_path / "ud"
+    assert market_flow.update_alphas(pairs, ud, get=get) > 0
+    a = market_flow.load("C0/USDT", "alpha", ud)
+    assert set(market_flow.ALPHA_FEATURES) <= set(a.columns) and a[market_flow.ALPHA_FEATURES].abs().max().max() <= 0.5
+    # Kerze am 10.09. 12:00: Tageswert vom 09.09. ist fertig, der vom 10.09. noch nicht
+    t = pd.Timestamp("2026-09-10 12:00", tz="UTC")
+    f = market_flow.alpha_features("C0/USDT", pd.Series([t]), ud)
+    exp = a.set_index("date").loc[pd.Timestamp("2026-09-09", tz="UTC"), "alpha_x_high60"]
+    assert f["alpha_x_high60"].iloc[0] == exp

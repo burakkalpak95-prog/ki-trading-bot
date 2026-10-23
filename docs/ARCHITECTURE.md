@@ -306,3 +306,8 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   Veröffentlichungs-Verzögerung (25–36 h) eingebaut. Antwortformate erst am PC geprüft (aus der Cloud geblockt).
 - Verworfen: Scraper für Chart-Webseiten (z. B. chaindl: Nutzungsbedingungen unklar, bricht leicht), Santiment und
   CoinGlass (Key bzw. kostenpflichtig für Verlauf), Apify-Scraper (kostenpflichtig).
+- **Ergebnis Faktor-Test am PC (23.10.2026, 16 Coins, Tageskerzen):** 9 von 68 (Faktor × Horizont) leben in beiden
+  Zeiträumen. Fast alle messen Risiko: hohe Tagesspanne, Schwankung, Illiquidität und Beta → in den Folgetagen
+  schlechter als die anderen Coins; nahe am 60-Tage-Hoch → besser (IC je etwa 0,03–0,10). Die 6 unterschiedlichen
+  (`alphas.LIVE`) gehen als `alpha_*`-Merkmale (Rang unter allen Coins, Wert des Vortags) an beide KIs. Ob sie die
+  KIs verbessern, zeigt der Vergleich der Trefferquote vor/nach dem Einbau (Unsicher, Paper-Daten brauchen Wochen).

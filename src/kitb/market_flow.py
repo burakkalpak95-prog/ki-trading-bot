@@ -44,7 +44,7 @@ FLOW_TEXT = {
     "flow_ls_top": "Long/Short-Verhältnis der Top-Trader",
     "flow_oi_change_4h": "Veränderung der offenen Positionen (4 h)",
 }
-KINDS = ("taker", "funding", "ratio", "depth", "news")
+KINDS = ("taker", "funding", "ratio", "depth", "news", "alpha")
 FNG_URL = "https://api.alternative.me/fng/"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 FRED_SERIES = {"VIXCLS": "vix", "DGS10": "us10y", "DTWEXBGS": "dollar", "SP500": "spx", "NASDAQ100": "ndx"}
@@ -68,7 +68,9 @@ CONTEXT_TEXT = {
     "ctx_stable_chg_30d": "Stablecoin-Menge 30 Tage", "ctx_btc_active_chg_7d": "Aktive BTC-Adressen 7 Tage",
     "ctx_btc_mvrv": "BTC Marktwert/realisierter Wert (MVRV)", "ctx_eth_active_chg_7d": "Aktive ETH-Adressen 7 Tage",
 }
-ALL_FEATURES = FLOW_FEATURES + CONTEXT_FEATURES
+ALPHA_FEATURES = ["alpha_ts_klen", "alpha_x_illiq20", "alpha_x_vol20", "alpha_x_beta60", "alpha_x_high60",
+                  "alpha_ts_corr20"]  # = kitb.alphas.LIVE, Rang unter allen Lern-Coins am Vortag
+ALL_FEATURES = FLOW_FEATURES + CONTEXT_FEATURES + ALPHA_FEATURES
 
 
 def flow_dir(user_data: Path | None = None) -> Path:
@@ -327,7 +329,8 @@ def record_news(pair: str, user_data: Path | None = None, get_text: Callable = _
     return len(new)
 
 
-def update_context(user_data: Path | None = None, get: Callable = _get, get_text: Callable = _get_text) -> dict:
+def update_context(user_data: Path | None = None, get: Callable = _get, get_text: Callable = _get_text,
+                   pairs: list[str] | None = None) -> dict:
     """Tageswerte für alle Coins gemeinsam (komplett neu geladen – wenige tausend Zeilen)."""
     import io
 
@@ -348,7 +351,8 @@ def update_context(user_data: Path | None = None, get: Callable = _get, get_text
             res[name] = _store("CONTEXT", name, df, user_data)
         except Exception as e:  # noqa: BLE001
             res[name] = f"Fehler: {str(e)[:120]}"
-    for name, fn in (("dvol", lambda: update_dvol(user_data, get)), ("stablecoins", lambda: update_stablecoins(user_data, get)),
+    for name, fn in (("dvol", lambda: update_dvol(user_data, get)),
+                     ("alphas", lambda: update_alphas(pairs, user_data, get) if pairs else 0), ("stablecoins", lambda: update_stablecoins(user_data, get)),
                      ("onchain", lambda: update_onchain(user_data, get))):
         try:
             out = fn()
@@ -356,6 +360,24 @@ def update_context(user_data: Path | None = None, get: Callable = _get, get_text
         except Exception as e:  # noqa: BLE001
             res[name] = f"Fehler: {str(e)[:120]}"
     return res
+
+
+def update_alphas(pairs: list[str], user_data: Path | None = None, get: Callable = _get) -> int:
+    """Formel-Faktoren (kitb.alphas.LIVE) aus Binance-Tageskerzen aller Coins; nur abgeschlossene Tage."""
+    from kitb import alphas
+
+    now = pd.Timestamp.now(tz="UTC")
+    frames = {}
+    for pair in pairs:
+        rows = get(f"{SPOT}/api/v3/klines", {"symbol": symbol(pair), "interval": "1d", "limit": 200})
+        df = pd.DataFrame({"date": pd.to_datetime([r[0] for r in rows], unit="ms", utc=True),
+                           "close_time": pd.to_datetime([r[6] for r in rows], unit="ms", utc=True),
+                           **{c: [float(r[i]) for r in rows] for c, i in
+                              (("open", 1), ("high", 2), ("low", 3), ("close", 4), ("volume", 5))}})
+        frames[pair] = df[df["close_time"] < now].set_index("date")
+    panel = {c: pd.DataFrame({p: f[c] for p, f in frames.items()}).sort_index()
+             for c in ("open", "high", "low", "close", "volume")}
+    return sum(_store(p, "alpha", df, user_data) for p, df in alphas.daily_ranks(panel).items())
 
 
 def update_dvol(user_data: Path | None = None, get: Callable = _get) -> dict[str, int]:
@@ -465,7 +487,28 @@ def all_features(pair: str, dates: pd.Series, minutes: int, user_data: Path | No
     except Exception:  # noqa: BLE001
         log.exception("Gesamtmarktdaten nicht lesbar")
         c = pd.DataFrame(index=pd.RangeIndex(len(dates)), columns=CONTEXT_FEATURES, dtype=float)
-    return pd.concat([f.reset_index(drop=True), c.reset_index(drop=True)], axis=1)
+    try:
+        a = alpha_features(pair, dates, user_data)
+    except Exception:  # noqa: BLE001
+        log.exception("Faktoren %s nicht lesbar", pair)
+        a = pd.DataFrame(index=pd.RangeIndex(len(dates)), columns=ALPHA_FEATURES, dtype=float)
+    return pd.concat([f.reset_index(drop=True), c.reset_index(drop=True), a.reset_index(drop=True)], axis=1)
+
+
+def alpha_features(pair: str, dates: pd.Series, user_data: Path | None = None) -> pd.DataFrame:
+    """Rang des Coins bei den Formel-Faktoren; Tageswert (Datum = Tagesbeginn) gilt erst nach Tagesschluss."""
+    idx = pd.DataFrame({"date": pd.to_datetime(dates, utc=True).astype("datetime64[ns, UTC]")})
+    out = pd.DataFrame(index=idx.index, columns=ALPHA_FEATURES, dtype=float)
+    df = load(pair, "alpha", user_data)
+    cols = [c for c in ALPHA_FEATURES if c in df.columns]
+    if df.empty or not cols:
+        return out
+    key = pd.DataFrame({"t": idx["date"], "i": idx.index}).sort_values("t")
+    right = pd.DataFrame({"t": (pd.to_datetime(df["date"], utc=True) + pd.Timedelta(days=1, minutes=5))
+                          .astype("datetime64[ns, UTC]")}).join(df[cols]).sort_values("t")
+    m = pd.merge_asof(key, right, on="t", direction="backward", tolerance=pd.Timedelta(days=3))
+    out[cols] = m.set_index("i").reindex(idx.index)[cols]
+    return out.astype(float)
 
 
 def features(pair: str, dates: pd.Series, minutes: int, user_data: Path | None = None) -> pd.DataFrame:
@@ -531,7 +574,7 @@ def loop(pairs: list[str], user_data: Path | None = None, once: bool = False) ->
             except Exception as e:  # noqa: BLE001
                 print(f"Datenübersicht: Fehler {e}", flush=True)
         if now - last_ctx >= pd.Timedelta(hours=6):
-            res["Gesamtmarkt"] = update_context(user_data)
+            res["Gesamtmarkt"] = update_context(user_data, pairs=pairs)
             last_ctx = now
         if now - last_news >= pd.Timedelta(minutes=30):
             for pair in pairs:
