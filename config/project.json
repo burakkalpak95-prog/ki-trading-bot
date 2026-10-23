@@ -310,7 +310,8 @@
     },
     "paper_learning": {
         "$comment": "Lernmodus der KI-Bots und Datensammler im Paper-Trading (Freigabe Burak, 22.10.2026). Nur virtuelles Kapital.",
-        "retrain_hours": 4,
+        "$comment_retrain": "Burak 23.10.2026 Regel 1 (Lernzyklus so oft wie möglich): Bot A/B lernen stündlich neu statt alle 4 h (eine neue 1h-Kerze je Stunde). Falls die CPU nicht mitkommt, wieder erhöhen.",
+        "retrain_hours": 1,
         "memory_every_hours": 1,
         "$comment_slots": "Freigabe Burak 23.10.2026: zuerst bis 6, dann („was am besten für die Lerndaten ist“) ein Platz je Lern-Coin. KIs im Paper-Lernmodus: Einsatz je Trade = Konto × Gesamteinsatz-Limit / Plätze (Plätze höchstens Anzahl Lern-Coins). Tagesverlust-, Positions- und Drawdown-Limits unverändert. Kandidaten und Sammler bleiben bei risk.json.",
         "max_open_positions_learning": 16,

@@ -213,7 +213,7 @@ def test_learning_mode_needs_human_approval_and_retrains_daily(reg, tmp_path):
     strategy_approval.approve(reg, "bot_a", by="Burak", reason="Lernmodus")
     _, cfg = paper.build_paper_config("bot_a", reg, tmp_path / "ud")
     assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True
-    assert cfg["freqai"]["live_retrain_hours"] == 4 and cfg["freqai"]["identifier"].startswith("paper-learn-bot_a-")
+    assert cfg["freqai"]["live_retrain_hours"] == 1 and cfg["freqai"]["identifier"].startswith("paper-learn-bot_a-")
     assert not cfg["exchange"].get("key")
 
 
