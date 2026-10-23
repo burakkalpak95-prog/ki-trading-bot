@@ -314,6 +314,16 @@ def cmd_methods(args) -> int:
     return 0
 
 
+def cmd_alphas(args) -> int:
+    """Formel-Faktoren über alle Lern-Coins testen (IC früh/spät, nur historische Daten)."""
+    from kitb import alphas
+
+    res = alphas.run(data_source=args.source)
+    print(Path(res["report"]).read_text(encoding="utf-8"))
+    _print(res)
+    return 0
+
+
 def cmd_killswitch(args) -> int:
     from kitb import killswitch
 
@@ -539,6 +549,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--source", default="binance")
     s.add_argument("--timeframes", nargs="*")
     s.set_defaults(func=cmd_methods)
+
+    s = sub.add_parser("alphas", help="Formel-Faktoren (Alpha101/Qlib-Art) über alle Lern-Coins: IC früh UND spät")
+    s.add_argument("action", choices=["bench"])
+    s.add_argument("--source", default="binance")
+    s.set_defaults(func=cmd_alphas)
 
     s = sub.add_parser("live", help="Live-Trading ist GESPERRT. Nur: readiness (Checkliste), confirm-risk")
     s.add_argument("action", choices=["readiness", "confirm-risk"])

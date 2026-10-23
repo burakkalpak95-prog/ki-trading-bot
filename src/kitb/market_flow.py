@@ -9,6 +9,10 @@ Quellen (öffentlich, kostenlos, ohne Konto/Keys, nur lesend):
 - Gesamtmarkt/Stimmung (für alle Coins gleich): Krypto-Fear-&-Greed-Index (alternative.me, ab 2018) und aus der
   Datenbank der US-Notenbank St. Louis (FRED, CSV ohne Key): VIX, Rendite 10-jähriger US-Anleihen, Dollar-Index, S&P 500,
   Nasdaq 100 (Krypto läuft seit etwa 2020 oft ähnlich wie Technologie-Aktien, Stärke schwankt – Unsicher).
+- Weitere freie Quellen ohne Key (GitHub-/Web-Recherche 23.10.2026): Deribit-Volatilitätsindex DVOL für BTC/ETH (was
+  Optionshändler an Schwankung erwarten), DefiLlama Stablecoin-Menge (neues Geld im Kryptomarkt), Coin Metrics Community
+  (aktive Adressen und MVRV für BTC/ETH; Lizenz CC BY-NC 4.0, für private Nutzung frei). Antwortformate vor dem ersten
+  Lauf am PC noch nicht geprüft (Unsicher) – Fehler werden nur protokolliert, die KIs bekommen dann NaN/0.
 
 Einziger Schreiber ist der Dienst ``market-flow`` (``kitb flow loop``). Die Strategien lesen nur. Damit kein Blick in die
 Zukunft entsteht, bekommt eine Kerze nur Werte, die beim Schließen der **vorherigen** Kerze bekannt waren.
@@ -45,13 +49,24 @@ FNG_URL = "https://api.alternative.me/fng/"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 FRED_SERIES = {"VIXCLS": "vix", "DGS10": "us10y", "DTWEXBGS": "dollar", "SP500": "spx", "NASDAQ100": "ndx"}
 CONTEXT_FEATURES = ["ctx_fear_greed", "ctx_fear_greed_chg_7d", "ctx_vix", "ctx_vix_chg_5d", "ctx_us10y_chg_20d",
-                    "ctx_dollar_chg_20d", "ctx_spx_ret_5d", "ctx_spx_ret_20d", "ctx_ndx_ret_5d", "ctx_ndx_ret_20d"]
+                    "ctx_dollar_chg_20d", "ctx_spx_ret_5d", "ctx_spx_ret_20d", "ctx_ndx_ret_5d", "ctx_ndx_ret_20d",
+                    "ctx_dvol_btc", "ctx_dvol_btc_chg_5d", "ctx_dvol_eth", "ctx_stable_chg_7d", "ctx_stable_chg_30d",
+                    "ctx_btc_active_chg_7d", "ctx_btc_mvrv", "ctx_eth_active_chg_7d"]
+DERIBIT_URL = "https://www.deribit.com/api/v2/public/get_volatility_index_data"
+STABLE_URL = "https://stablecoins.llama.fi/stablecoincharts/all"
+COINMETRICS_URL = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+ONCHAIN_SERIES = {("btc", "AdrActCnt"): "btc_active", ("btc", "CapMVRVCur"): "btc_mvrv", ("eth", "AdrActCnt"): "eth_active"}
+EXTRA_CONTEXT = ("dvol_btc", "dvol_eth", "stablecoins", *ONCHAIN_SERIES.values())
 CONTEXT_TEXT = {
     "ctx_fear_greed": "Krypto-Stimmung (Fear & Greed)", "ctx_fear_greed_chg_7d": "Stimmungsänderung 7 Tage",
     "ctx_vix": "Angstbarometer der Aktienbörse (VIX)", "ctx_vix_chg_5d": "VIX-Änderung 5 Tage",
     "ctx_us10y_chg_20d": "Änderung US-Zinsen (10 Jahre) 20 Tage", "ctx_dollar_chg_20d": "Dollar-Stärke 20 Tage",
     "ctx_spx_ret_5d": "S&P 500 letzte 5 Tage", "ctx_spx_ret_20d": "S&P 500 letzte 20 Tage",
     "ctx_ndx_ret_5d": "Nasdaq 100 (Technologie) letzte 5 Tage", "ctx_ndx_ret_20d": "Nasdaq 100 letzte 20 Tage",
+    "ctx_dvol_btc": "Erwartete Schwankung BTC (Optionen, DVOL)", "ctx_dvol_btc_chg_5d": "DVOL-Änderung 5 Tage",
+    "ctx_dvol_eth": "Erwartete Schwankung ETH (Optionen, DVOL)", "ctx_stable_chg_7d": "Stablecoin-Menge 7 Tage",
+    "ctx_stable_chg_30d": "Stablecoin-Menge 30 Tage", "ctx_btc_active_chg_7d": "Aktive BTC-Adressen 7 Tage",
+    "ctx_btc_mvrv": "BTC Marktwert/realisierter Wert (MVRV)", "ctx_eth_active_chg_7d": "Aktive ETH-Adressen 7 Tage",
 }
 ALL_FEATURES = FLOW_FEATURES + CONTEXT_FEATURES
 
@@ -333,6 +348,67 @@ def update_context(user_data: Path | None = None, get: Callable = _get, get_text
             res[name] = _store("CONTEXT", name, df, user_data)
         except Exception as e:  # noqa: BLE001
             res[name] = f"Fehler: {str(e)[:120]}"
+    for name, fn in (("dvol", lambda: update_dvol(user_data, get)), ("stablecoins", lambda: update_stablecoins(user_data, get)),
+                     ("onchain", lambda: update_onchain(user_data, get))):
+        try:
+            out = fn()
+            res.update(out if isinstance(out, dict) else {name: out})
+        except Exception as e:  # noqa: BLE001
+            res[name] = f"Fehler: {str(e)[:120]}"
+    return res
+
+
+def update_dvol(user_data: Path | None = None, get: Callable = _get) -> dict[str, int]:
+    """Deribit-Volatilitätsindex (DVOL) als Tageskerzen; gespeichert wird der Schlusswert, Datum = Tagesbeginn."""
+    res = {}
+    for cur in ("BTC", "ETH"):
+        start, end = pd.Timestamp(BACKFILL_FROM, tz="UTC"), pd.Timestamp.now(tz="UTC")
+        rows: list = []
+        while start < end:
+            stop = min(start + pd.Timedelta(days=500), end)
+            r = get(DERIBIT_URL, {"currency": cur, "start_timestamp": _ms(start), "end_timestamp": _ms(stop),
+                                  "resolution": "1D"})
+            rows += (r.get("result") or {}).get("data") or []
+            start = stop
+        df = pd.DataFrame({"date": pd.to_datetime([int(x[0]) for x in rows], unit="ms", utc=True),
+                           "value": [float(x[4]) for x in rows]}).drop_duplicates("date")
+        res[f"dvol_{cur.lower()}"] = _store("CONTEXT", f"dvol_{cur.lower()}", df, user_data)
+    return res
+
+
+def update_stablecoins(user_data: Path | None = None, get: Callable = _get) -> int:
+    """Gesamtmenge aller Dollar-Stablecoins (DefiLlama) je Tag – wächst sie, fließt neues Geld in den Kryptomarkt."""
+    rows = get(STABLE_URL, {})
+    vals = [(r["date"], (r.get("totalCirculatingUSD") or r.get("totalCirculating") or {}).get("peggedUSD")) for r in rows]
+    df = pd.DataFrame({"date": pd.to_datetime([int(d) for d, v in vals if v], unit="s", utc=True),
+                       "value": [float(v) for d, v in vals if v]})
+    return _store("CONTEXT", "stablecoins", df[df["date"] >= pd.Timestamp(BACKFILL_FROM, tz="UTC")], user_data)
+
+
+def update_onchain(user_data: Path | None = None, get: Callable = _get) -> dict[str, int]:
+    """Coin Metrics Community (ohne Key, max. 10 Abfragen/6 s): aktive Adressen, MVRV – Tageswerte."""
+    res = {}
+    for asset in sorted({a for a, _ in ONCHAIN_SERIES}):
+        metrics = [m for a, m in ONCHAIN_SERIES if a == asset]
+        params: dict[str, Any] = {"assets": asset, "metrics": ",".join(metrics), "frequency": "1d",
+                                  "start_time": BACKFILL_FROM, "page_size": 10000}
+        data: list = []
+        url = COINMETRICS_URL
+        for _ in range(10):
+            r = get(url, params)
+            data += r.get("data") or []
+            url, params = r.get("next_page_url"), {}
+            if not url:
+                break
+        raw = pd.DataFrame(data)
+        for m in metrics:
+            name = ONCHAIN_SERIES[(asset, m)]
+            if raw.empty or m not in raw:
+                res[name] = "Fehler: Kennzahl fehlt"
+                continue
+            df = pd.DataFrame({"date": pd.to_datetime(raw["time"], utc=True),
+                               "value": pd.to_numeric(raw[m], errors="coerce")}).dropna()
+            res[name] = _store("CONTEXT", name, df, user_data)
     return res
 
 
@@ -365,6 +441,15 @@ def context_features(dates: pd.Series, user_data: Path | None = None) -> pd.Data
                         "ctx_spx_ret_20d": lambda v: v.pct_change(20, fill_method=None)})
     series("ndx", day, {"ctx_ndx_ret_5d": lambda v: v.pct_change(5, fill_method=None),
                         "ctx_ndx_ret_20d": lambda v: v.pct_change(20, fill_method=None)})
+    # Tageskerze/Tageswert mit Datum = Tagesbeginn: erst nach Tagesende fertig (+ Puffer bis zur Veröffentlichung)
+    series("dvol_btc", pd.Timedelta(hours=25), {"ctx_dvol_btc": lambda v: v / 100,
+                                                "ctx_dvol_btc_chg_5d": lambda v: v.pct_change(5, fill_method=None)})
+    series("dvol_eth", pd.Timedelta(hours=25), {"ctx_dvol_eth": lambda v: v / 100})
+    series("stablecoins", pd.Timedelta(hours=26), {"ctx_stable_chg_7d": lambda v: v.pct_change(7, fill_method=None),
+                                                   "ctx_stable_chg_30d": lambda v: v.pct_change(30, fill_method=None)})
+    series("btc_active", day, {"ctx_btc_active_chg_7d": lambda v: v.rolling(7).mean().pct_change(7, fill_method=None)})
+    series("btc_mvrv", day, {"ctx_btc_mvrv": lambda v: v - 1})
+    series("eth_active", day, {"ctx_eth_active_chg_7d": lambda v: v.rolling(7).mean().pct_change(7, fill_method=None)})
     return out.astype(float)
 
 

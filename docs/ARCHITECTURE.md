@@ -292,3 +292,17 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   UND Gewinn nach Gebühren in beiden Zeiträumen. Methoden mit hoher Trefferquote verlieren nach Gebühren (z. B.
   VWAP-Rückkehr 15m: 61 % Treffer, −59 %); die Gewinner treffen selten (Ichimoku 4h: 34 %, +58 %). Daher keine neuen
   Bots. Alle 19 Einstiegssignale fließen stattdessen als Merkmale `%-m_*`/`%-m4_*` in KI 1 ein.
+
+## ADR-019: Ideen aus Vibe-Trading und weitere freie Quellen (23.10.2026)
+
+- **Vibe-Trading (HKUDS, MIT)** ist ein Chat-Recherche-Assistent mit Sprachmodell (Daten holen, Strategie schreiben,
+  Backtest, Bericht). Für unser selbstlernendes System nicht als Ganzes passend; Code wird **nicht** übernommen.
+- Übernommen als Idee, eigene Umsetzung: **Faktor-Test** `kitb alphas bench` (`src/kitb/alphas.py`). 34 öffentliche
+  Formeln (Auswahl Kakushadze 101, Qlib-Alpha158-Art, klassische Querschnittsfaktoren) werden auf Tageskerzen aller
+  Lern-Coins mit dem IC (Rangkorrelation zur späteren Rendite) bewertet, früh UND spät, Test-Abschnitt unberührt.
+  Nur was in beiden Zeiträumen lebt, darf als Merkmal in einen A/B-Test der KIs.
+- Neue freie Quellen ohne Key (Recherche GitHub/Web): Deribit-DVOL BTC/ETH, DefiLlama Stablecoin-Menge,
+  Coin Metrics Community (aktive Adressen, MVRV; CC BY-NC 4.0, private Nutzung). Als `ctx_*`-Merkmale mit
+  Veröffentlichungs-Verzögerung (25–36 h) eingebaut. Antwortformate erst am PC geprüft (aus der Cloud geblockt).
+- Verworfen: Scraper für Chart-Webseiten (z. B. chaindl: Nutzungsbedingungen unklar, bricht leicht), Santiment und
+  CoinGlass (Key bzw. kostenpflichtig für Verlauf), Apify-Scraper (kostenpflichtig).

@@ -25,6 +25,9 @@ SOURCE_TEXT = {
     "news": "Schlagzeilen mit Stimmung (Google News, ab jetzt aufgezeichnet)",
     "fear_greed": "Krypto Fear & Greed", "vix": "VIX (FRED)", "us10y": "US-Zinsen 10 J. (FRED)",
     "dollar": "Dollar-Index (FRED)", "spx": "S&P 500 (FRED)", "ndx": "Nasdaq 100 (FRED)",
+    "dvol_btc": "Volatilitätsindex BTC (Deribit)", "dvol_eth": "Volatilitätsindex ETH (Deribit)",
+    "stablecoins": "Stablecoin-Menge (DefiLlama)", "btc_active": "Aktive BTC-Adressen (Coin Metrics)",
+    "btc_mvrv": "BTC MVRV (Coin Metrics)", "eth_active": "Aktive ETH-Adressen (Coin Metrics)",
 }
 KI_NAMES = {"ki_trader": "KI 1 (Muster)", "ki_reward": "KI 2 (Belohnung)", "bot_a": "KI-Bot A", "bot_b": "KI-Bot B"}
 
@@ -66,7 +69,7 @@ def imported(user_data: Path | None = None, exchange: str = "binance") -> list[d
             frm, to = _span(files[0])
             out.append({"Quelle": SOURCE_TEXT[kind], "Coins": len(files), "Zeilen": sum(_rows(f) for f in files),
                         "von": frm, "bis": to})
-    for kind in ("fear_greed", *market_flow.FRED_SERIES.values()):
+    for kind in ("fear_greed", *market_flow.FRED_SERIES.values(), *market_flow.EXTRA_CONTEXT):
         f = fd / f"CONTEXT-{kind}.parquet"
         if f.exists():
             frm, to = _span(f)

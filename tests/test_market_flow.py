@@ -31,6 +31,15 @@ def fake_get(url, params):
     if url.startswith(market_flow.FNG_URL):
         return {"data": [{"timestamp": str(int((T0 - pd.Timedelta(days=i)).timestamp())), "value": str(40 + i)}
                          for i in range(30)]}
+    days = pd.date_range(T0 - pd.Timedelta(days=60), T0 + pd.Timedelta(days=2), freq="D")
+    if url == market_flow.DERIBIT_URL:
+        a, b = pd.Timestamp(params["start_timestamp"], unit="ms", tz="UTC"), pd.Timestamp(params["end_timestamp"], unit="ms", tz="UTC")
+        return {"result": {"data": [[_ms(d), 50, 55, 45, 50 + i % 7] for i, d in enumerate(days) if a <= d < b]}}
+    if url == market_flow.STABLE_URL:
+        return [{"date": str(int(d.timestamp())), "totalCirculatingUSD": {"peggedUSD": 1e11 + i * 1e8}} for i, d in enumerate(days)]
+    if url == market_flow.COINMETRICS_URL:
+        return {"data": [{"asset": params["assets"], "time": f"{d:%Y-%m-%d}T00:00:00.000000000Z",
+                          **{m: str(1000 + i) for m in params["metrics"].split(",")}} for i, d in enumerate(days)]}
     raise AssertionError(url)
 
 
@@ -85,6 +94,11 @@ def test_context_waits_for_publication(tmp_path):
     # FRED-Tageswert vom 01.10. erst nach 36 h nutzbar -> um 12:00 gilt noch der Wert vom 30.09.
     assert c["ctx_spx_ret_5d"].notna().all()
     assert c["ctx_fear_greed"].iloc[0] == (40 / 100 - 0.5)
+    new = ["ctx_dvol_btc", "ctx_dvol_eth", "ctx_stable_chg_7d", "ctx_btc_mvrv", "ctx_btc_active_chg_7d"]
+    assert c[new].notna().all(axis=None)
+    # Tageswert vom 01.10. (Tagesbeginn) ist um 12:00 am selben Tag noch nicht fertig -> Wert vom 30.09.
+    dv = market_flow.load("CONTEXT", "dvol_btc", ud).set_index("date")["value"]
+    assert c["ctx_dvol_btc"].iloc[0] == dv[T0 - pd.Timedelta(days=1)] / 100
 
 
 def test_missing_data_never_breaks_snapshot(tmp_path):
