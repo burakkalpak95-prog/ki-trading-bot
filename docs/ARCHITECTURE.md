@@ -255,3 +255,6 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   spätestens nach 16 Kerzen (4 h). `max_hold_candles` zählt jetzt Kerzen des Bot-Zeitrahmens, die Lern-Trade-Ziehung
   (`explore_draw`) läuft je Kerze. Unsicher: Binance-Abfragegrenzen und Trainingszeit bei 25 Bots × 16 Coins –
   nach dem Start beobachten.
+- **Plätze (Entscheidungskarte Burak, 23.10.2026, „Ja, 16 Plätze je KI“):** KIs im Paper-Lernmodus ein Platz je
+  Lern-Coin (16), Einsatz je Trade = 10.000 × 80 % / 16 = 500 USDT. Plätze werden nie größer als die Anzahl Coins.
+  Tagesverlust, Positionsgröße, Gesamteinsatz und Drawdown unverändert.

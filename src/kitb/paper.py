@@ -107,11 +107,12 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
 
 
 def _apply_learning_slots(cfg: dict[str, Any], project: dict[str, Any]) -> None:
-    """KIs im Paper-Lernmodus: mehr gleichzeitige Positionen (Freigabe Burak 23.10.2026: bis 6). Einsatz je Trade so
+    """KIs im Paper-Lernmodus: mehr gleichzeitige Positionen (Freigabe Burak 23.10.2026, Entscheidungskarte: ein Platz je Lern-Coin, 16). Einsatz je Trade so
     verkleinert, dass alle Positionen zusammen das Gesamteinsatz-Limit (max_total_exposure_fraction) einhalten."""
     from kitb.risk import RiskLimits
 
     n = int(project.get("paper_learning", {}).get("max_open_positions_learning", 0))
+    n = min(n, len(cfg.get("exchange", {}).get("pair_whitelist") or [])) or n  # mehr Plätze als Coins bringen nichts
     if n <= 0 or not cfg.get("dry_run"):
         return
     exposure = RiskLimits.load().max_total_exposure_fraction

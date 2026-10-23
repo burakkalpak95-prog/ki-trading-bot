@@ -97,7 +97,7 @@ def test_fleet_approval_includes_both_ais(ud, capsys):
     assert "für trend_d1." not in out  # Kandidat bleibt eigene Freigabe
 
 
-def test_learning_ais_get_six_slots_within_exposure_limit(tmp_path):
+def test_learning_ais_get_one_slot_per_coin_within_exposure_limit(tmp_path):
     from kitb import paper, strategy_approval
     from kitb.registry import Registry
     from kitb.risk import RiskLimits
@@ -108,8 +108,9 @@ def test_learning_ais_get_six_slots_within_exposure_limit(tmp_path):
         strategy_approval.approve(reg, bot, by="Burak", reason="t")
     for bot in ("ki_reward", "ki_trader"):
         _, cfg = paper.build_paper_config(bot, reg, tmp_path / "ud")
-        assert cfg["max_open_trades"] == 6 == cfg["kitb_max_open_positions"]
-        assert cfg["stake_amount"] * 6 <= cfg["dry_run_wallet"] * lim.max_total_exposure_fraction
+        n = len(cfg["exchange"]["pair_whitelist"])
+        assert cfg["max_open_trades"] == 16 == n == cfg["kitb_max_open_positions"]
+        assert cfg["stake_amount"] * n <= cfg["dry_run_wallet"] * lim.max_total_exposure_fraction
     for bot in ("trend_d1", "donchian_15m"):
         _, cfg = paper.build_paper_config(bot, reg, tmp_path / "ud")
         assert cfg["max_open_trades"] == lim.max_open_positions and "kitb_max_open_positions" not in cfg

@@ -324,7 +324,7 @@
         "retrain_hours": 4,
         "memory_every_hours": 1,
         "$comment_slots": "Freigabe Burak 23.10.2026: zuerst bis 6, dann („was am besten für die Lerndaten ist“) ein Platz je Lern-Coin. KIs im Paper-Lernmodus: Einsatz je Trade = Konto × Gesamteinsatz-Limit / Plätze (Plätze höchstens Anzahl Lern-Coins). Tagesverlust-, Positions- und Drawdown-Limits unverändert. Kandidaten und Sammler bleiben bei risk.json.",
-        "max_open_positions_learning": 6,
+        "max_open_positions_learning": 16,
         "$comment_practice": "KI-Bots üben im Paper-Lernmodus (Burak 23.10.2026): Einstieg ab 52 % statt 60 % plus ~15 % Übungstrades ab 45 % (Tag „lern: …“); ki_trader übt stärker (eigene practice-Werte).",
         "learning_entry_proba": 0.52,
         "explore_share": 0.15,
