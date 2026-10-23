@@ -41,9 +41,14 @@ class KiReward(RiskManagedMixin, IStrategy):
         p = shared_memory.db_path()
         stamp = p.stat().st_mtime if p.exists() else None
         if self._model is None or stamp != self._model_stamp:
-            self._model = reward_learner.fit(shared_memory.load())
+            try:
+                self._model = reward_learner.fit(shared_memory.load())
+                log.info("KI 2 hat neu gelernt: %s Trades im gemeinsamen Gedächtnis", self._model.n_trades)
+            except Exception:  # noqa: BLE001 – Lernfehler darf Handel/Ausstiege nicht blockieren: altes Modell behalten
+                log.exception("KI 2: Neu-Lernen fehlgeschlagen, nutze bisheriges Modell")
+                if self._model is None:
+                    self._model = reward_learner.RewardModel()
             self._model_stamp = stamp
-            log.info("KI 2 hat neu gelernt: %s Trades im gemeinsamen Gedächtnis", self._model.n_trades)
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         snap = shared_memory.market_snapshot(dataframe, 15)

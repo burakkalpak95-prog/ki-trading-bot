@@ -152,5 +152,5 @@ def load(user_data: Path | None = None) -> pd.DataFrame:
         return pd.DataFrame()
     if df.empty:
         return df
-    feats = pd.DataFrame([json.loads(f) if f else {} for f in df["features"]], index=df.index)
+    feats = pd.DataFrame([json.loads(f) if isinstance(f, str) and f else {} for f in df["features"]], index=df.index)
     return pd.concat([df.drop(columns=["features"]), feats.reindex(columns=SNAPSHOT_FEATURES)], axis=1)

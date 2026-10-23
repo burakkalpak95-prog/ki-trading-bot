@@ -150,3 +150,16 @@ def test_sync_without_snapshot_file_keeps_result(ud):
     assert shared_memory.sync(ud) == 1
     mem = shared_memory.load(ud)
     assert mem["ki"].tolist() == ["bot_b"] and mem["kind"].tolist() == ["signal"] and mem["rsi_14"].isna().all()
+
+
+def test_reward_learner_reads_memory_with_trades_without_features(ud):
+    _ft_db(ud / "paper" / "bot_b" / "tradesv3.dryrun.sqlite", [
+        (1, "BTC/USDT", 0, "2026-10-23 01:00:00", "2026-10-23 03:00:00", 100, 101, 1000, 0.008, 8, "ml_up", "x")])
+    feats = {f: 0.1 for f in shared_memory.SNAPSHOT_FEATURES}
+    shared_memory.snapshot("ki_reward", pair="ADA/USDT", when="2026-10-23 02:00:00+00:00", kind="learn",
+                           reason="lern: x, halten 4h", features=feats, action="4h", user_data=ud)
+    _ft_db(ud / "paper" / "ki_reward" / "tradesv3.dryrun.sqlite", [
+        (1, "ADA/USDT", 0, "2026-10-23 02:00:10", "2026-10-23 06:00:00", 1, 0.97, 1000, -0.032, -32, "lern: x, halten 4h", "h")])
+    shared_memory.sync(ud)
+    m = reward_learner.fit(shared_memory.load(ud))  # darf an Zeilen ohne Merkmale nicht scheitern
+    assert m.n_trades == 1 and "4h" in m.arms
