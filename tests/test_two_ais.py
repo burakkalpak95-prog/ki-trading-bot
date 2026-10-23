@@ -51,7 +51,7 @@ def test_shared_memory_merges_both_ais_once_and_survives_restart(ud):
 def test_reward_learner_learns_from_rewards_and_explores():
     rng = np.random.default_rng(1)
     rows = []
-    for _ in range(600):
+    for _ in range(1500):
         f = {c: rng.normal() for c in shared_memory.SNAPSHOT_FEATURES}
         arm = str(rng.choice(list(reward_learner.ARMS)))
         good = f["ret_24h"] > 0

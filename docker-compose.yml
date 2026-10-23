@@ -104,9 +104,6 @@ services:
   paper-macd-rsi-1h:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "macd_rsi_1h"]
-  paper-bollinger-1h:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "bollinger_1h"]
   paper-donchian-1h:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "donchian_1h"]
@@ -125,9 +122,6 @@ services:
   paper-macd-rsi-1h-ki:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "macd_rsi_1h_ki"]
-  paper-bollinger-1h-ki:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "bollinger_1h_ki"]
   paper-donchian-1h-ki:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "donchian_1h_ki"]
@@ -155,6 +149,14 @@ services:
   paper-squeeze-15m:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "squeeze_15m"]
+
+  # Marktdaten für die KIs (nur öffentliche Daten, kein Handel): Kaufdruck, Terminmarkt, Orderbuch, Gesamtmarkt.
+  market-flow:
+    <<: *paper-fleet
+    command: ["flow", "loop"]
+    restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: "1"
 
   # KI-Gedächtnis: einmal täglich alle Trades sammeln, KI-Filter neu lernen und auf ungesehenen Trades prüfen.
   ai-memory:

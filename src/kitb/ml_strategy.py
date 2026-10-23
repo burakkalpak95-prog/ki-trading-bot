@@ -146,7 +146,7 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
             from freqtrade.exchange import timeframe_to_minutes
 
             df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
-            snap = shared_memory.market_snapshot(df, timeframe_to_minutes(self.timeframe)).iloc[-1]
+            snap = shared_memory.market_snapshot(df, timeframe_to_minutes(self.timeframe), pair).iloc[-1]
             tag = str(entry_tag or "")
             shared_memory.snapshot(self.config["bot_name"], pair=pair, when=current_time,
                                    kind="learn" if tag.startswith("lern") else "signal", reason=tag,

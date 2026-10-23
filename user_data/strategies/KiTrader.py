@@ -67,6 +67,15 @@ class KiTrader(KitbFreqaiBase):
         sig = rule_signals(dataframe)
         for c in sig.columns:
             dataframe[c] = sig[c]
+        # Was alle Trader tun + Gesamtmarkt/Stimmung (Burak 23.10.2026). Fehlende Werte neutral (0), sonst verwirft
+        # FreqAI die ganze Zeile; Verhältnisse gibt es erst ab ~30 Tagen vor Start, älteres Training sieht dort 0.
+        from freqtrade.exchange import timeframe_to_minutes
+        from kitb import market_flow
+
+        extra = market_flow.all_features(metadata.get("pair", ""), dataframe["date"],
+                                         timeframe_to_minutes(self.timeframe))
+        for c in extra.columns:
+            dataframe[f"%-{c}"] = extra[c].fillna(0.0).to_numpy()
         return dataframe
 
     def populate_entry_trend(self, df: DataFrame, metadata: dict) -> DataFrame:

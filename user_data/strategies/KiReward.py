@@ -51,7 +51,7 @@ class KiReward(RiskManagedMixin, IStrategy):
             self._model_stamp = stamp
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        snap = shared_memory.market_snapshot(dataframe, 15)
+        snap = shared_memory.market_snapshot(dataframe, 15, metadata.get("pair"))
         for c in snap.columns:
             dataframe[f"snap_{c}"] = snap[c]
         return dataframe
@@ -61,7 +61,8 @@ class KiReward(RiskManagedMixin, IStrategy):
         if not self._is_live_like() or dataframe.empty or dataframe["volume"].iloc[-1] <= 0:
             return dataframe
         self._refresh_model()
-        feats = {c: float(dataframe[f"snap_{c}"].iloc[-1]) for c in shared_memory.SNAPSHOT_FEATURES}
+        feats = {c: float(dataframe[f"snap_{c}"].iloc[-1]) for c in shared_memory.SNAPSHOT_FEATURES
+                 if f"snap_{c}" in dataframe}
         d = reward_learner.choose(self._model, feats, np.random.default_rng(), self._epsilon())
         if d["arm"]:
             dataframe.loc[dataframe.index[-1], ["enter_long", "enter_tag"]] = (1, d["reason"])
@@ -85,7 +86,8 @@ class KiReward(RiskManagedMixin, IStrategy):
         if allowed and self._is_live_like():
             try:
                 df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
-                feats = {c: float(df[f"snap_{c}"].iloc[-1]) for c in shared_memory.SNAPSHOT_FEATURES}
+                feats = {c: float(df[f"snap_{c}"].iloc[-1]) for c in shared_memory.SNAPSHOT_FEATURES
+                         if f"snap_{c}" in df}
                 tag = str(entry_tag or "")
                 arm = re.search(r"halten (\d+h)", tag)
                 shared_memory.snapshot("ki_reward", pair=pair, when=current_time,

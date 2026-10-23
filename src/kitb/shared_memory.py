@@ -18,10 +18,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from kitb import paths
+from kitb import market_flow, paths
 
 KIS = {"ki_trader": "KI 1 (Muster)", "ki_reward": "KI 2 (Belohnung)", "bot_a": "KI-Bot A", "bot_b": "KI-Bot B"}
-SNAPSHOT_FEATURES = ["ret_1h", "ret_4h", "ret_24h", "rsi_14", "natr_14", "dist_ema50", "dist_ema200", "rel_volume"]
+PRICE_FEATURES = ["ret_1h", "ret_4h", "ret_24h", "rsi_14", "natr_14", "dist_ema50", "dist_ema200", "rel_volume"]
+# + was alle Trader tun und Gesamtmarkt/Stimmung (kitb.market_flow, Burak 23.10.2026). Ältere Einträge ohne diese Werte
+# bleiben gültig (fehlende Werte zählen beim Lernen als Durchschnitt).
+SNAPSHOT_FEATURES = PRICE_FEATURES + market_flow.ALL_FEATURES
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS trades (
@@ -41,8 +44,10 @@ def db_path(user_data: Path | None = None) -> Path:
     return memory_dir(user_data) / "shared.sqlite"
 
 
-def market_snapshot(df: pd.DataFrame, minutes_per_candle: int) -> pd.DataFrame:
-    """Gleiche Marktmerkmale für beide KIs (unabhängig vom Zeitrahmen), nur aus abgeschlossenen Kerzen."""
+def market_snapshot(df: pd.DataFrame, minutes_per_candle: int, pair: str | None = None,
+                    user_data: Path | None = None) -> pd.DataFrame:
+    """Gleiche Marktmerkmale für beide KIs (unabhängig vom Zeitrahmen), nur aus abgeschlossenen Kerzen.
+    Mit ``pair`` zusätzlich Trader-Verhalten und Gesamtmarkt (kitb.market_flow)."""
     per_h = max(1, 60 // minutes_per_candle)
     c = df["close"]
     out = pd.DataFrame(index=df.index)
@@ -58,6 +63,10 @@ def market_snapshot(df: pd.DataFrame, minutes_per_candle: int) -> pd.DataFrame:
     out["dist_ema50"] = c / c.ewm(span=50, adjust=False).mean() - 1
     out["dist_ema200"] = c / c.ewm(span=200, adjust=False).mean() - 1
     out["rel_volume"] = df["volume"] / df["volume"].rolling(20).mean()
+    if pair is not None and "date" in df:
+        extra = market_flow.all_features(pair, df["date"], minutes_per_candle, user_data)
+        extra.index = out.index
+        out = pd.concat([out, extra], axis=1)
     return out
 
 

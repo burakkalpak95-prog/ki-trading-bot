@@ -290,6 +290,20 @@ def cmd_memory(args) -> int:
             time.sleep(60.0)
 
 
+def cmd_flow(args) -> int:
+    """Marktdaten (Trader-Verhalten, Gesamtmarkt) für die KIs sammeln – nur öffentliche Daten, kein Handel."""
+    from kitb import market_flow
+
+    if args.action == "status":
+        from kitb import data_overview
+
+        _print(data_overview.overview())
+        return 0
+    pairs = load_project_config().get("learning_pairs") or load_project_config()["allowed_pairs"]
+    market_flow.loop(pairs, once=args.action == "update")
+    return 0
+
+
 def cmd_killswitch(args) -> int:
     from kitb import killswitch
 
@@ -505,6 +519,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", choices=["seed", "daily", "loop", "status", "sync"])
     s.add_argument("--source", default="binance")
     s.set_defaults(func=cmd_memory)
+
+    s = sub.add_parser("flow", help="Marktdaten für die KIs: update (einmal, lädt Verlauf nach) | loop (Dienst) | status")
+    s.add_argument("action", choices=["update", "loop", "status"])
+    s.set_defaults(func=cmd_flow)
 
     s = sub.add_parser("live", help="Live-Trading ist GESPERRT. Nur: readiness (Checkliste), confirm-risk")
     s.add_argument("action", choices=["readiness", "confirm-risk"])

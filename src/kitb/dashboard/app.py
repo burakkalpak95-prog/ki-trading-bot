@@ -25,7 +25,7 @@ ks = status["kill_switch"]
 if ks:
     st.error(f"NOT-STOPP AKTIV seit {ks.get('activated_at')} – Grund: {ks.get('reason')} (durch {ks.get('by')})")
 
-ki_tab, overview_tab, learned_tab, *tabs = st.tabs(["KI-Trades", "Übersicht", "Was hat die KI gelernt?", "Status", "Kurse & Signale", "Paper-Trading", "Bot A vs. Bot B",
+ki_tab, data_tab, overview_tab, learned_tab, *tabs = st.tabs(["KI-Trades", "KI-Daten", "Übersicht", "Was hat die KI gelernt?", "Status", "Kurse & Signale", "Paper-Trading", "Bot A vs. Bot B",
                                "Strategien", "Entscheidungen", "Modelle", "Datenqualität", "Fehler", "Not-Stopp"])
 
 
@@ -227,6 +227,28 @@ def _live_prices(exchange_id: str, pairs: tuple[str, ...]) -> dict[str, float]:
 
 
 @st.fragment(run_every=30)
+@st.fragment(run_every=60)
+def ki_data_page() -> None:
+    """Wie viele Daten nutzt die KI? Eingeführte Internet-Daten und Lerndaten aus eigenen Trades (Burak 23.10.2026)."""
+    from kitb import data_overview
+
+    o = data_overview.read()
+    if not o:
+        st.info("Noch keine Übersicht – der Dienst „market-flow“ schreibt sie alle 5 Minuten.")
+        return
+    c1, c2 = st.columns(2)
+    c1.metric("Eingeführte Daten (Zeilen)", f"{o['eingefuehrt_zeilen']:,}".replace(",", "."))
+    c2.metric("Lerndaten aus eigenen Trades", o["eigene_trades_gesamt"],
+              delta=f"+{sum(r['letzte 24 h'] for r in o['eigene_trades'])} in 24 h")
+    st.subheader("Eigene Trades: was die KIs selbst dazugewinnen")
+    st.dataframe(pd.DataFrame(o["eigene_trades"]), hide_index=True, width="stretch")
+    st.subheader("Eingeführte Daten aus dem Internet")
+    st.dataframe(pd.DataFrame(o["eingefuehrt"]), hide_index=True, width="stretch")
+    st.subheader("Was jede KI pro Training nutzt")
+    st.dataframe(pd.DataFrame(o["nutzung"]), hide_index=True, width="stretch")
+    st.caption(f"{o['hinweis']} Stand: {o['updated_at'][:16].replace('T', ' ')} UTC")
+
+
 def ki_trades_page() -> None:
     """Alle Trades der KI (Regel 2, Burak 23.10.2026). Aktualisiert sich alle 30 s."""
     ft = load_freqtrade_config()
@@ -294,6 +316,9 @@ def ki_trades_page() -> None:
 
 with ki_tab:
     ki_trades_page()
+
+with data_tab:
+    ki_data_page()
 
 with learned_tab:
     learned_page()

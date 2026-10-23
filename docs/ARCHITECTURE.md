@@ -258,3 +258,31 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - **Plätze (Entscheidungskarte Burak, 23.10.2026, „Ja, 16 Plätze je KI“):** KIs im Paper-Lernmodus ein Platz je
   Lern-Coin (16), Einsatz je Trade = 10.000 × 80 % / 16 = 500 USDT. Plätze werden nie größer als die Anzahl Coins.
   Tagesverlust, Positionsgröße, Gesamteinsatz und Drawdown unverändert.
+
+## ADR-018: Internet-Daten für die KIs (Burak, 23.10.2026)
+
+- **Ziel:** Burak: „so viele Daten wie möglich aus dem Internet, damit die KIs gut aufgestellt sind“, alle kostenlosen
+  Quellen ausschöpfen.
+- **Dienst `market-flow`** (`kitb flow loop`, einziger Schreiber, nur öffentliche Daten, kein Handel) →
+  `user_data/market_flow/*.parquet`.
+  - **Binance Spot:** Kaufdruck aus taker buy volume (15m, Verlauf ab 2022), Orderbuch-Ungleichgewicht (nur
+    Aufzeichnung).
+  - **Binance USDT-Terminmarkt, nur gelesen:** Finanzierungsrate (ab 2022), Long/Short aller Konten und der
+    Top-Trader, offene Positionen. Über die API gibt es dafür nur ~30 Tage, Nachladen aus data.binance.vision ist
+    geplant.
+  - **Gesamtmarkt:** Krypto Fear & Greed (alternative.me) und FRED-CSV ohne Key (VIX, US-Zins 10 J., Dollar-Index,
+    S&P 500, Nasdaq 100).
+- **Kein Blick in die Zukunft:**
+  - Eine Kerze sieht nur Werte, die beim Schluss der vorherigen Kerze bekannt waren.
+  - FRED-Tageswerte gelten erst nach 36 h (Unsicher, wann genau veröffentlicht).
+  - Zu alte Werte (Dienst aus) werden nicht weitergetragen, sondern bleiben NaN.
+- **Einbau:**
+  - KI 1 bekommt `%-flow_*`/`%-ctx_*`-Merkmale (fehlend = 0, sonst würde FreqAI Zeilen verwerfen).
+  - Das gemeinsame Gedächtnis (KI 2 und alle Einstiegsnotizen) bekommt dieselben Werte in `SNAPSHOT_FEATURES`.
+  - Ältere Einträge ohne diese Werte zählen beim Lernen als Durchschnitt.
+  - Folge: KI 2 hat mehr Merkmale und braucht mehr Trades, bis sie sich sicher ist (sie probiert länger aus).
+- **Ansicht „KI-Daten“:** `kitb.data_overview` → `market_flow/overview.json` (alle 5 Min.): eingeführte Daten je Quelle
+  (Zeilen, Zeitraum), Lerndaten aus eigenen Trades je KI (gesamt, 24 h, heute), was jede KI pro Training nutzt
+  (Schätzung).
+- **Flotte:** bollinger_1h und bollinger_1h_ki sind abgeschaltet (≈0,4 Trades je Coin und Monat, seit Start kein Trade).
+  Burak hat die Flotte am 23.10. an Claude delegiert.

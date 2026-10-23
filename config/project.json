@@ -220,11 +220,6 @@
             "description": "Datensammler: Momentum, MACD + RSI, 1h",
             "mode": "explore"
         },
-        "bollinger_1h": {
-            "strategy": "MeanReversionBollinger",
-            "description": "Datensammler: Rückkehr zum Mittelwert, Bollinger-Bänder, 1h",
-            "mode": "explore"
-        },
         "donchian_1h": {
             "strategy": "BreakoutDonchian",
             "description": "Datensammler: Ausbruch, Donchian-Kanal, 1h",
@@ -255,12 +250,6 @@
         "macd_rsi_1h_ki": {
             "strategy": "MomentumMacdRsi",
             "description": "Wie macd_rsi_1h, aber mit KI-Filter",
-            "mode": "explore",
-            "ai_filter": true
-        },
-        "bollinger_1h_ki": {
-            "strategy": "MeanReversionBollinger",
-            "description": "Wie bollinger_1h, aber mit KI-Filter",
             "mode": "explore",
             "ai_filter": true
         },
@@ -330,6 +319,7 @@
         "explore_share": 0.15,
         "explore_floor": 0.45,
         "refill_on_drawdown": true,
-        "apply_ai_filter": true
+        "apply_ai_filter": true,
+        "$comment_fleet": "Burak 23.10.2026: Claude entscheidet die Flotte nach Datenwert für die KIs. bollinger_1h/_ki abgeschaltet (≈0,4 Trades je Coin und Monat, kein Trade seit Start); bollinger_15m bleibt."
     }
 }
