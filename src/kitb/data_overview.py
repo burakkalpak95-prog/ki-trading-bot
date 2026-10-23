@@ -29,6 +29,8 @@ SOURCE_TEXT = {
     "dvol_btc": "Volatilitätsindex BTC (Deribit)", "dvol_eth": "Volatilitätsindex ETH (Deribit)",
     "stablecoins": "Stablecoin-Menge (DefiLlama)", "btc_active": "Aktive BTC-Adressen (Coin Metrics)",
     "btc_mvrv": "BTC MVRV (Coin Metrics)", "eth_active": "Aktive ETH-Adressen (Coin Metrics)",
+    "wiki_btc": "Wikipedia-Aufrufe Bitcoin", "wiki_eth": "Wikipedia-Aufrufe Ethereum",
+    "wiki_crypto": "Wikipedia-Aufrufe Cryptocurrency",
 }
 KI_NAMES = {"ki_trader": "KI 1 (Muster)", "ki_reward": "KI 2 (Belohnung)", "bot_a": "KI-Bot A", "bot_b": "KI-Bot B"}
 

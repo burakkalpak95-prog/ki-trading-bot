@@ -51,12 +51,17 @@ FRED_SERIES = {"VIXCLS": "vix", "DGS10": "us10y", "DTWEXBGS": "dollar", "SP500":
 CONTEXT_FEATURES = ["ctx_fear_greed", "ctx_fear_greed_chg_7d", "ctx_vix", "ctx_vix_chg_5d", "ctx_us10y_chg_20d",
                     "ctx_dollar_chg_20d", "ctx_spx_ret_5d", "ctx_spx_ret_20d", "ctx_ndx_ret_5d", "ctx_ndx_ret_20d",
                     "ctx_dvol_btc", "ctx_dvol_btc_chg_5d", "ctx_dvol_eth", "ctx_stable_chg_7d", "ctx_stable_chg_30d",
-                    "ctx_btc_active_chg_7d", "ctx_btc_mvrv", "ctx_eth_active_chg_7d"]
+                    "ctx_btc_active_chg_7d", "ctx_btc_mvrv", "ctx_eth_active_chg_7d",
+                    "ctx_wiki_btc_chg_7d", "ctx_wiki_eth_chg_7d", "ctx_wiki_crypto_chg_7d"]
+WIKI_URL = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/{page}/daily/{a}/{b}"
+WIKI_PAGES = {"Bitcoin": "wiki_btc", "Ethereum": "wiki_eth", "Cryptocurrency": "wiki_crypto"}
+# Wikimedia verlangt einen aussagekräftigen User-Agent mit Kontakt; hier das (öffentliche) Projekt-Repo, keine E-Mail.
+WIKI_UA = "ki-trading-bot/1.0 (private research; https://github.com/burakkalpak95-prog/ki-trading-bot)"
 DERIBIT_URL = "https://www.deribit.com/api/v2/public/get_volatility_index_data"
 STABLE_URL = "https://stablecoins.llama.fi/stablecoincharts/all"
 COINMETRICS_URL = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
 ONCHAIN_SERIES = {("btc", "AdrActCnt"): "btc_active", ("btc", "CapMVRVCur"): "btc_mvrv", ("eth", "AdrActCnt"): "eth_active"}
-EXTRA_CONTEXT = ("dvol_btc", "dvol_eth", "stablecoins", *ONCHAIN_SERIES.values())
+EXTRA_CONTEXT = ("dvol_btc", "dvol_eth", "stablecoins", *ONCHAIN_SERIES.values(), *WIKI_PAGES.values())
 CONTEXT_TEXT = {
     "ctx_fear_greed": "Krypto-Stimmung (Fear & Greed)", "ctx_fear_greed_chg_7d": "Stimmungsänderung 7 Tage",
     "ctx_vix": "Angstbarometer der Aktienbörse (VIX)", "ctx_vix_chg_5d": "VIX-Änderung 5 Tage",
@@ -67,6 +72,9 @@ CONTEXT_TEXT = {
     "ctx_dvol_eth": "Erwartete Schwankung ETH (Optionen, DVOL)", "ctx_stable_chg_7d": "Stablecoin-Menge 7 Tage",
     "ctx_stable_chg_30d": "Stablecoin-Menge 30 Tage", "ctx_btc_active_chg_7d": "Aktive BTC-Adressen 7 Tage",
     "ctx_btc_mvrv": "BTC Marktwert/realisierter Wert (MVRV)", "ctx_eth_active_chg_7d": "Aktive ETH-Adressen 7 Tage",
+    "ctx_wiki_btc_chg_7d": "Aufmerksamkeit: Wikipedia-Aufrufe „Bitcoin“ 7 Tage",
+    "ctx_wiki_eth_chg_7d": "Aufmerksamkeit: Wikipedia-Aufrufe „Ethereum“ 7 Tage",
+    "ctx_wiki_crypto_chg_7d": "Aufmerksamkeit: Wikipedia-Aufrufe „Cryptocurrency“ 7 Tage",
 }
 ALPHA_FEATURES = ["alpha_ts_klen", "alpha_x_illiq20", "alpha_x_vol20", "alpha_x_beta60", "alpha_x_high60",
                   "alpha_ts_corr20"]  # = kitb.alphas.LIVE, Rang unter allen Lern-Coins am Vortag
@@ -353,7 +361,8 @@ def update_context(user_data: Path | None = None, get: Callable = _get, get_text
             res[name] = f"Fehler: {str(e)[:120]}"
     for name, fn in (("dvol", lambda: update_dvol(user_data, get)),
                      ("alphas", lambda: update_alphas(pairs, user_data, get) if pairs else 0), ("stablecoins", lambda: update_stablecoins(user_data, get)),
-                     ("onchain", lambda: update_onchain(user_data, get))):
+                     ("onchain", lambda: update_onchain(user_data, get)),
+                     ("wiki", lambda: update_wiki(user_data, None if get is _get else get))):
         try:
             out = fn()
             res.update(out if isinstance(out, dict) else {name: out})
@@ -378,6 +387,28 @@ def update_alphas(pairs: list[str], user_data: Path | None = None, get: Callable
     panel = {c: pd.DataFrame({p: f[c] for p, f in frames.items()}).sort_index()
              for c in ("open", "high", "low", "close", "volume")}
     return sum(_store(p, "alpha", df, user_data) for p, df in alphas.daily_ranks(panel).items())
+
+
+def _get_wiki(url: str, params: dict[str, Any]) -> Any:
+    import requests
+
+    r = requests.get(url, params=params, timeout=30, headers={"User-Agent": WIKI_UA})
+    r.raise_for_status()
+    return r.json()
+
+
+def update_wiki(user_data: Path | None = None, get: Callable | None = None) -> dict[str, int]:
+    """Wikipedia-Seitenaufrufe je Tag (Wikimedia, frei, ohne Key) – Maß dafür, wie viele Menschen sich gerade für
+    Krypto interessieren (neue Käufer kommen oft mit steigender Aufmerksamkeit, Unsicher wie stark)."""
+    get = get or _get_wiki
+    a, b = BACKFILL_FROM.replace("-", ""), f"{pd.Timestamp.now(tz='UTC'):%Y%m%d}"
+    res = {}
+    for page, name in WIKI_PAGES.items():
+        items = get(WIKI_URL.format(page=page, a=a, b=b), {}).get("items") or []
+        df = pd.DataFrame({"date": pd.to_datetime([i["timestamp"][:8] for i in items], format="%Y%m%d", utc=True),
+                           "value": [float(i["views"]) for i in items]})
+        res[name] = _store("CONTEXT", name, df, user_data)
+    return res
 
 
 def update_dvol(user_data: Path | None = None, get: Callable = _get) -> dict[str, int]:
@@ -472,6 +503,9 @@ def context_features(dates: pd.Series, user_data: Path | None = None) -> pd.Data
     series("btc_active", day, {"ctx_btc_active_chg_7d": lambda v: v.rolling(7).mean().pct_change(7, fill_method=None)})
     series("btc_mvrv", day, {"ctx_btc_mvrv": lambda v: v - 1})
     series("eth_active", day, {"ctx_eth_active_chg_7d": lambda v: v.rolling(7).mean().pct_change(7, fill_method=None)})
+    for kind, col in (("wiki_btc", "ctx_wiki_btc_chg_7d"), ("wiki_eth", "ctx_wiki_eth_chg_7d"),
+                      ("wiki_crypto", "ctx_wiki_crypto_chg_7d")):
+        series(kind, day, {col: lambda v: np.log(v.rolling(7).mean() / v.rolling(7).mean().shift(7))})
     return out.astype(float)
 
 

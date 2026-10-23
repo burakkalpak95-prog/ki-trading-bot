@@ -324,6 +324,16 @@ def cmd_alphas(args) -> int:
     return 0
 
 
+def cmd_news_test(args) -> int:
+    """Schlagzeilen-Test: Wortliste vs. lokales Sprachmodell (Ollama) – sagt die Bewertung die Kurse danach voraus?"""
+    from kitb import news_test
+
+    res = news_test.run(Path(args.headlines), model=args.model or None, data_source=args.source, limit=args.limit)
+    print(Path(res["report"]).read_text(encoding="utf-8"))
+    _print(res)
+    return 0
+
+
 def cmd_killswitch(args) -> int:
     from kitb import killswitch
 
@@ -554,6 +564,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", choices=["bench"])
     s.add_argument("--source", default="binance")
     s.set_defaults(func=cmd_alphas)
+
+    s = sub.add_parser("news-test", help="Schlagzeilen-Test: Wortliste vs. lokales Sprachmodell (nur Historie)")
+    s.add_argument("headlines", help="Datei oder Ordner mit Schlagzeilen (CSV/Parquet/JSONL mit Zeitstempel + Titel)")
+    s.add_argument("--model", default="", help="Ollama-Modell, z. B. qwen2.5:7b (leer: nur Wortliste)")
+    s.add_argument("--source", default="binance")
+    s.add_argument("--limit", type=int, default=None, help="nur eine Stichprobe bewerten")
+    s.set_defaults(func=cmd_news_test)
 
     s = sub.add_parser("live", help="Live-Trading ist GESPERRT. Nur: readiness (Checkliste), confirm-risk")
     s.add_argument("action", choices=["readiness", "confirm-risk"])

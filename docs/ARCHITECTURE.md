@@ -311,3 +311,9 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   schlechter als die anderen Coins; nahe am 60-Tage-Hoch → besser (IC je etwa 0,03–0,10). Die 6 unterschiedlichen
   (`alphas.LIVE`) gehen als `alpha_*`-Merkmale (Rang unter allen Coins, Wert des Vortags) an beide KIs. Ob sie die
   KIs verbessern, zeigt der Vergleich der Trefferquote vor/nach dem Einbau (Unsicher, Paper-Daten brauchen Wochen).
+- **Zweite Such-Runde (23.10.2026 abends):** Neu eingebaut: Wikipedia-Seitenaufrufe (Bitcoin, Ethereum,
+  Cryptocurrency; Wikimedia, frei, ab 2015) als Aufmerksamkeits-Merkmal. Gefunden für einen späteren Test: Datensatz
+  DLT-Sentiment-News (≈23.000 Krypto-Schlagzeilen 2021–05/2025 mit Zeitstempel, CryptoPanic, CC BY-NC 4.0) – damit
+  lässt sich vorab prüfen, ob eine Schlagzeilen-Bewertung (Wortliste oder lokales Sprachmodell) Kurse vorhersagt.
+  Verworfen: GDELT-Doc-API (offiziell nur 3 Monate Verlauf), awesome-freqtrade/FreqAI-Topic (keine Datenquellen,
+  nur Indikator-Schnipsel), Blockchain.com-Charts (On-Chain schon über Coin Metrics, API-Format nicht verifiziert).

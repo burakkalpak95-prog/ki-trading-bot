@@ -40,6 +40,8 @@ def fake_get(url, params):
     if url == market_flow.COINMETRICS_URL:
         return {"data": [{"asset": params["assets"], "time": f"{d:%Y-%m-%d}T00:00:00.000000000Z",
                           **{m: str(1000 + i) for m in params["metrics"].split(",")}} for i, d in enumerate(days)]}
+    if url.startswith("https://wikimedia.org/"):
+        return {"items": [{"timestamp": f"{d:%Y%m%d}00", "views": 1000 + 10 * i} for i, d in enumerate(days)]}
     raise AssertionError(url)
 
 
@@ -94,7 +96,8 @@ def test_context_waits_for_publication(tmp_path):
     # FRED-Tageswert vom 01.10. erst nach 36 h nutzbar -> um 12:00 gilt noch der Wert vom 30.09.
     assert c["ctx_spx_ret_5d"].notna().all()
     assert c["ctx_fear_greed"].iloc[0] == (40 / 100 - 0.5)
-    new = ["ctx_dvol_btc", "ctx_dvol_eth", "ctx_stable_chg_7d", "ctx_btc_mvrv", "ctx_btc_active_chg_7d"]
+    new = ["ctx_dvol_btc", "ctx_dvol_eth", "ctx_stable_chg_7d", "ctx_btc_mvrv", "ctx_btc_active_chg_7d",
+           "ctx_wiki_btc_chg_7d", "ctx_wiki_crypto_chg_7d"]
     assert c[new].notna().all(axis=None)
     # Tageswert vom 01.10. (Tagesbeginn) ist um 12:00 am selben Tag noch nicht fertig -> Wert vom 30.09.
     dv = market_flow.load("CONTEXT", "dvol_btc", ud).set_index("date")["value"]
