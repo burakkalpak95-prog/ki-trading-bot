@@ -129,6 +129,7 @@ def test_paper_config_is_dry_run_without_keys(reg, tmp_path):
     assert "api_server" not in cfg and not cfg["telegram"]["enabled"]
     assert json.loads(path.read_text())["dry_run"] is True
     cmd = paper.command("bot_a", path, tmp_path / "ud")
+    assert cmd[cmd.index("--datadir") + 1] == str(paper.paper_dir("bot_a", tmp_path / "ud") / "data")  # eigener Ordner
     assert cmd[3] == "trade" and "--dry-run-wallet" not in cmd
 
 

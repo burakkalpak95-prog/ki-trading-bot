@@ -180,6 +180,11 @@ def command(bot: str, config_path: Path, user_data_dir: Path | None = None) -> l
            "--strategy", spec["strategy"], "--strategy-path", str(paths.USER_DATA / "strategies")]
     if not rule:
         cmd += ["--freqaimodel", spec["freqaimodel"], "--freqaimodel-path", str(paths.USER_DATA / "freqaimodels")]
+        # Eigener Kursdaten-Ordner je KI-Bot (23.10.2026): FreqAI lädt beim Start Kurse nach und schreibt sie in den
+        # Datenordner. Teilen sich mehrere Bots einen Ordner, liest einer manchmal eine halb geschriebene Datei
+        # (bot_a: "Could not open Parquet" -> 15 von 16 Coins ohne Auswertung bis zum Neustart). Nur per Kommandozeile
+        # wirksam: Freqtrade überschreibt "datadir" aus der Konfiguration.
+        cmd += ["--datadir", str(paper_dir(bot, user_data_dir) / "data")]
     return cmd + ["--logfile", str(paper_dir(bot, user_data_dir) / "freqtrade.log")]
 
 
