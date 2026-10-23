@@ -6,6 +6,7 @@ unsicheren Trades und schließt Positionen spätestens nach dem Lernhorizont, da
 Risikolimits gelten unverändert (RiskManagedMixin).
 """
 
+import numpy as np
 import talib.abstract as ta
 from pandas import DataFrame
 from technical import qtpylib
@@ -43,6 +44,37 @@ def rule_signals(df: DataFrame) -> DataFrame:
     return out
 
 
+_METHODS = None
+
+
+def method_signals(df: DataFrame) -> dict:
+    """Einstiegssignale aller Methoden der Methoden-Bibliothek als 0/1-Merkmale (Burak 23.10.2026).
+
+    Keine Methode bestand allein (≥ 60 % Treffer UND Gewinn nach Gebühren), als Zusatzinfo lernt KI 1 selbst, wann man
+    ihnen trauen kann. Fehler einer Methode -> 0 (nie ein Abbruch)."""
+    global _METHODS
+    if _METHODS is None:
+        import importlib.util
+        from pathlib import Path
+
+        spec = importlib.util.spec_from_file_location("MethodLibrary", Path(__file__).with_name("MethodLibrary.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _METHODS = mod.METHODS
+    out = {}
+    for cls in _METHODS:
+        name = f"%-m_{cls.TAG}"
+        try:
+            s = cls.__new__(cls)
+            d = s.populate_indicators(df[["date", "open", "high", "low", "close", "volume"]].copy(), {})
+            sig = s.entry(d).fillna(False).astype(float).to_numpy()
+        except Exception:  # noqa: BLE001
+            sig = np.zeros(len(df))
+        out[name] = sig
+        out[name.replace("%-m_", "%-m4_")] = DataFrame({"x": sig}, index=df.index)["x"].rolling(4, min_periods=1).max().to_numpy()
+    return out
+
+
 class KiTrader(KitbFreqaiBase):
     startup_candle_count = 500
 
@@ -67,6 +99,8 @@ class KiTrader(KitbFreqaiBase):
         sig = rule_signals(dataframe)
         for c in sig.columns:
             dataframe[c] = sig[c]
+        for c, v in method_signals(dataframe).items():
+            dataframe[c] = v
         # Was alle Trader tun + Gesamtmarkt/Stimmung (Burak 23.10.2026). Fehlende Werte neutral (0), sonst verwirft
         # FreqAI die ganze Zeile; Verhältnisse gibt es erst ab ~30 Tagen vor Start, älteres Training sieht dort 0.
         from freqtrade.exchange import timeframe_to_minutes

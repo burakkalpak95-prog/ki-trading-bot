@@ -288,3 +288,7 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   vorerst nur Aufzeichnung (kein rückwirkender Abruf möglich). Als Merkmal erst nach genug Verlauf.
 - **Flotte:** bollinger_1h und bollinger_1h_ki sind abgeschaltet (≈0,4 Trades je Coin und Monat, seit Start kein Trade).
   Burak hat die Flotte am 23.10. an Claude delegiert.
+- **Methoden-Suche (23.10.2026, echte Daten, 16 Coins, 2022–11/2025):** Keine der 19 Methoden erreichte ≥ 60 % Treffer
+  UND Gewinn nach Gebühren in beiden Zeiträumen. Methoden mit hoher Trefferquote verlieren nach Gebühren (z. B.
+  VWAP-Rückkehr 15m: 61 % Treffer, −59 %); die Gewinner treffen selten (Ichimoku 4h: 34 %, +58 %). Daher keine neuen
+  Bots. Alle 19 Einstiegssignale fließen stattdessen als Merkmale `%-m_*`/`%-m4_*` in KI 1 ein.

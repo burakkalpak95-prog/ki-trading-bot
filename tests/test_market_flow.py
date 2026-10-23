@@ -121,6 +121,8 @@ def test_ki_trader_gets_flow_features(tmp_path):
     out = s.feature_engineering_standard(df.copy(), {"pair": "BTC/USDT"})
     cols = [f"%-{c}" for c in market_flow.ALL_FEATURES]
     assert set(cols) <= set(out.columns) and out[cols].notna().all(axis=None)  # ohne Daten neutral 0
+    m = [c for c in out.columns if c.startswith("%-m_")]
+    assert len(m) >= 15 and out[m].isin([0.0, 1.0]).all(axis=None) and out[m].to_numpy().sum() > 0
 
 
 def test_data_overview_counts_sources_and_own_trades(tmp_path):

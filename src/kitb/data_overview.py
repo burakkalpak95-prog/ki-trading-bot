@@ -110,7 +110,7 @@ def usage(user_data: Path | None = None) -> list[dict[str, Any]]:
     fp = {**shared["feature_parameters"], **spec["feature_parameters"]}
     per_tf = 6 * len(fp["indicator_periods_candles"]) + 2  # expand_all × Perioden + expand_basic
     n_feats = (per_tf * len(fp["include_timeframes"]) * (1 + len(fp["include_corr_pairlist"]))
-               * (1 + fp.get("include_shifted_candles", 0))) + 2 + 12 + len(market_flow.ALL_FEATURES)
+               * (1 + fp.get("include_shifted_candles", 0))) + 2 + 12 + 2 * 19 + len(market_flow.ALL_FEATURES)  # Zeit, Regel-Bots, 19 Methoden
     candles_per_day = {"15m": 96, "1h": 24}.get(spec.get("timeframe", "1h"), 24)
     rows_per_pair = shared["train_period_days"] * candles_per_day
     mem = shared_memory.load(user_data)
