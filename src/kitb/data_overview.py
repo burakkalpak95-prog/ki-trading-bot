@@ -22,6 +22,7 @@ from kitb.config import load_project_config
 SOURCE_TEXT = {
     "taker": "Kaufdruck (Binance, 15 Min.)", "funding": "Finanzierungsrate Terminmarkt (Binance)",
     "ratio": "Long/Short + offene Positionen (Binance)", "depth": "Orderbuch (Binance, ab jetzt aufgezeichnet)",
+    "news": "Schlagzeilen mit Stimmung (Google News, ab jetzt aufgezeichnet)",
     "fear_greed": "Krypto Fear & Greed", "vix": "VIX (FRED)", "us10y": "US-Zinsen 10 J. (FRED)",
     "dollar": "Dollar-Index (FRED)", "spx": "S&P 500 (FRED)", "ndx": "Nasdaq 100 (FRED)",
 }

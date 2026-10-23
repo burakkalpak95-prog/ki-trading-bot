@@ -284,5 +284,7 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - **Ansicht „KI-Daten“:** `kitb.data_overview` → `market_flow/overview.json` (alle 5 Min.): eingeführte Daten je Quelle
   (Zeilen, Zeitraum), Lerndaten aus eigenen Trades je KI (gesamt, 24 h, heute), was jede KI pro Training nutzt
   (Schätzung).
+- **Schlagzeilen:** Google-News-RSS je Coin alle 30 Min. mit einfachem Wörterbuch-Stimmungswert (nicht kalibriert),
+  vorerst nur Aufzeichnung (kein rückwirkender Abruf möglich). Als Merkmal erst nach genug Verlauf.
 - **Flotte:** bollinger_1h und bollinger_1h_ki sind abgeschaltet (≈0,4 Trades je Coin und Monat, seit Start kein Trade).
   Burak hat die Flotte am 23.10. an Claude delegiert.

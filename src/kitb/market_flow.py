@@ -40,7 +40,7 @@ FLOW_TEXT = {
     "flow_ls_top": "Long/Short-Verhältnis der Top-Trader",
     "flow_oi_change_4h": "Veränderung der offenen Positionen (4 h)",
 }
-KINDS = ("taker", "funding", "ratio", "depth")
+KINDS = ("taker", "funding", "ratio", "depth", "news")
 FNG_URL = "https://api.alternative.me/fng/"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 FRED_SERIES = {"VIXCLS": "vix", "DGS10": "us10y", "DTWEXBGS": "dollar", "SP500": "spx", "NASDAQ100": "ndx"}
@@ -207,6 +207,62 @@ def update_all(pairs: list[str], user_data: Path | None = None, get: Callable = 
     return out
 
 
+COIN_NAMES = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "xrp ripple", "BNB": "bnb binance coin",
+              "ADA": "cardano", "DOGE": "dogecoin", "LINK": "chainlink", "AVAX": "avalanche avax", "DOT": "polkadot",
+              "LTC": "litecoin", "TRX": "tron trx", "NEAR": "near protocol", "ATOM": "cosmos atom", "BCH": "bitcoin cash",
+              "UNI": "uniswap"}
+NEWS_URL = "https://news.google.com/rss/search"
+# Kleines Stimmungs-Wörterbuch für Schlagzeilen (Annahme, nicht kalibriert – deshalb vorerst nur Aufzeichnung).
+_POS = {"surge", "surges", "soar", "soars", "rally", "rallies", "jump", "jumps", "gain", "gains", "record", "high",
+        "bull", "bullish", "breakout", "approve", "approved", "approval", "adoption", "inflow", "inflows", "rise",
+        "rises", "climb", "climbs", "beat", "upgrade", "partnership", "launch", "etf"}
+_NEG = {"crash", "crashes", "plunge", "plunges", "drop", "drops", "fall", "falls", "slump", "bear", "bearish",
+        "hack", "hacked", "exploit", "lawsuit", "sue", "sues", "ban", "bans", "fraud", "outflow", "outflows", "sell-off",
+        "selloff", "liquidation", "liquidations", "fear", "risk", "warning", "probe", "delist", "loss", "losses"}
+
+
+def headline_score(title: str) -> float:
+    words = {w.strip(".,:;!?'\"()").lower() for w in title.split()}
+    pos, neg = len(words & _POS), len(words & _NEG)
+    return 0.0 if pos + neg == 0 else (pos - neg) / (pos + neg)
+
+
+def record_news(pair: str, user_data: Path | None = None, get_text: Callable = _get_text) -> int:
+    """Schlagzeilen der letzten 24 h je Coin (Google-News-RSS) mit einfachem Stimmungswert – Aufzeichnung für später.
+
+    Als KI-Merkmal erst einbauen, wenn genug Verlauf vorliegt (kein rückwirkender Abruf möglich)."""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+
+    coin = pair.split("/")[0]
+    q = " OR ".join(f'"{n}"' for n in COIN_NAMES.get(coin, coin.lower()).split()[:1]) + " crypto when:1d"
+    root = ET.fromstring(get_text(NEWS_URL, {"q": q, "hl": "en-US", "gl": "US", "ceid": "US:en"}))
+    rows = []
+    for it in root.iter("item"):
+        title = (it.findtext("title") or "").strip()
+        try:
+            when = pd.Timestamp(parsedate_to_datetime(it.findtext("pubDate") or "")).tz_convert("UTC")
+        except Exception:  # noqa: BLE001
+            continue
+        rows.append({"date": when, "title": title, "source": (it.findtext("source") or "").strip(),
+                     "score": headline_score(title)})
+    if not rows:
+        return 0
+    new = pd.DataFrame(rows)
+    old = load(pair, "news", user_data)
+    if not old.empty:
+        new = new[~new["title"].isin(set(old["title"]))]
+    if new.empty:
+        return 0
+    df = pd.concat([old, new]) if not old.empty else new
+    p = _path(pair, "news", user_data)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    df.sort_values("date").reset_index(drop=True).to_parquet(tmp, index=False)
+    os.replace(tmp, p)
+    return len(new)
+
+
 def update_context(user_data: Path | None = None, get: Callable = _get, get_text: Callable = _get_text) -> dict:
     """Tageswerte für alle Coins gemeinsam (komplett neu geladen – wenige tausend Zeilen)."""
     import io
@@ -324,8 +380,9 @@ def features(pair: str, dates: pd.Series, minutes: int, user_data: Path | None =
 
 
 def loop(pairs: list[str], user_data: Path | None = None, once: bool = False) -> None:
-    """Dienst ``market-flow``: jede Minute Kaufdruck + Orderbuch, alle 5 Minuten Terminmarkt, alle 6 h Gesamtmarkt."""
-    last_slow = last_ctx = pd.Timestamp(0, tz="UTC")
+    """Dienst ``market-flow``: jede Minute Kaufdruck + Orderbuch, alle 5 Minuten Terminmarkt, alle 30 Min. Schlagzeilen,
+    alle 6 h Gesamtmarkt."""
+    last_slow = last_ctx = last_news = pd.Timestamp(0, tz="UTC")
     while True:
         now = pd.Timestamp.now(tz="UTC")
         slow = now - last_slow >= pd.Timedelta(minutes=5)
@@ -341,7 +398,15 @@ def loop(pairs: list[str], user_data: Path | None = None, once: bool = False) ->
         if now - last_ctx >= pd.Timedelta(hours=6):
             res["Gesamtmarkt"] = update_context(user_data)
             last_ctx = now
-        errors = {p: {k: v for k, v in r.items() if isinstance(v, str)} for p, r in res.items()}
+        if now - last_news >= pd.Timedelta(minutes=30):
+            for pair in pairs:
+                try:
+                    res.setdefault(pair, {})["news"] = record_news(pair, user_data)
+                except Exception as e:  # noqa: BLE001
+                    res.setdefault(pair, {})["news"] = f"Fehler: {str(e)[:120]}"
+            last_news = now
+        errors = {p: {k: v for k, v in r.items() if isinstance(v, str) and v.startswith("Fehler")}
+                  for p, r in res.items()}
         errors = {p: e for p, e in errors.items() if e}
         new = sum(v for r in res.values() for v in r.values() if isinstance(v, int))
         print(f"{now:%H:%M} Marktdaten: {new} neue Zeilen" + (f", Fehler: {errors}" if errors else ""), flush=True)

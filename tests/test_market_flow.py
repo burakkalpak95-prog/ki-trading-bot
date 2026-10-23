@@ -135,3 +135,15 @@ def test_data_overview_counts_sources_and_own_trades(tmp_path):
     assert [r["KI"] for r in o["nutzung"]] == ["KI 1 (Muster)", "KI 2 (Belohnung)"]
     data_overview.write(ud)
     assert data_overview.read(ud)["eingefuehrt_zeilen"] == o["eingefuehrt_zeilen"]
+
+
+def test_news_headlines_recorded_with_sentiment(tmp_path):
+    rss = """<rss><channel>
+    <item><title>Bitcoin price surges to record high</title><pubDate>Thu, 23 Oct 2026 10:00:00 GMT</pubDate><source>X</source></item>
+    <item><title>Exchange hacked, bitcoin plunges</title><pubDate>Thu, 23 Oct 2026 11:00:00 GMT</pubDate><source>Y</source></item>
+    </channel></rss>"""
+    ud = tmp_path / "ud"
+    assert market_flow.record_news("BTC/USDT", ud, get_text=lambda u, p: rss) == 2
+    assert market_flow.record_news("BTC/USDT", ud, get_text=lambda u, p: rss) == 0  # keine Doppel
+    n = market_flow.load("BTC/USDT", "news", ud).set_index("source")["score"]
+    assert n["X"] > 0 > n["Y"]
