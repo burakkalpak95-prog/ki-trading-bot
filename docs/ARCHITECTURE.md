@@ -238,6 +238,8 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - **Gemeinsames Gedächtnis** (`kitb.shared_memory`): jede KI hängt Einstiegsnotizen (Marktlage, Begründung, Art,
   Aktion) nur an ihre eigene Datei `ai_memory/snapshots/<ki>.jsonl` an (fsync). Einziger Schreiber der Datenbank
   `ai_memory/shared.sqlite` ist der Dienst `ai-memory` (jede Minute `sync`, idempotent per (KI, Runde, Trade-ID)).
+  Bewusst Journal-Modus DELETE statt WAL: WAL braucht geteilten Speicher (mmap), der über Docker-Desktop-Bind-Mounts
+  unter Windows nicht zuverlässig ist (Unsicher); bei nur einem Schreiber und reinen Lesern ist DELETE ausreichend.
   So kann gleichzeitiges Schreiben nichts beschädigen, und nach Neustarts wird alles aus den Quellen nachgezogen.
 - **Ressourcen:** beide Modelle sind klassisches ML auf der CPU (LightGBM ~ Sekunden je Training, Bandit Millisekunden).
   Kein Sprachmodell, die Grafikkarte wird nicht benötigt (gemessen: RTX 5070 Ti Laptop 12 GB, im Container nutzbar –

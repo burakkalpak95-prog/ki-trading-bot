@@ -161,3 +161,5 @@ services:
     <<: *paper-fleet
     command: ["memory", "loop"]
     restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: "1"  # Fortschritt sofort in docker logs sehen
