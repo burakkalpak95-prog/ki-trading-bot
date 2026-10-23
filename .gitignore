@@ -20,3 +20,6 @@ user_data/freqai_configs/
 user_data/paper/
 user_data/KILL_SWITCH
 user_data/*.json
+
+# Fremde Datensätze (Lizenz z. B. CC BY-NC, nicht ins Repo)
+user_data/datasets/
