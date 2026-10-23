@@ -14,12 +14,20 @@ import json
 import logging
 
 import numpy as np
+import pandas as pd
 from pandas import DataFrame
 
 from freqtrade.strategy import IStrategy
 from kitb.risk import RiskManagedMixin
 
 log = logging.getLogger(__name__)
+
+
+def explore_draw(dates, pair: str):
+    """Pseudozufall 0..999 je Kerze und Markt, gut durchmischt (kein Block über Tage) und reproduzierbar."""
+    hours = ((dates - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(hours=1)).astype("int64")
+    salt = sum((i + 1) * ord(c) for i, c in enumerate(pair))
+    return ((hours * 2_654_435_761 + salt * 40_503) % 4_294_967_296) % 1000
 
 
 class KitbFreqaiBase(RiskManagedMixin, IStrategy):
@@ -60,7 +68,7 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
         if explore > 0:
             # Nur Lernmodus im Paper-Trading (Burak, 23.10.2026): die KI geht gezielt auch Trades ohne Signal ein
             # (Lern-Trades), damit sie Negativdaten sammelt. Auswahl deterministisch je Kerze und Markt (nachvollziehbar).
-            h = (df["date"].astype("int64") // 3_600_000_000_000 + sum(map(ord, metadata.get("pair", "")))) % 1000
+            h = explore_draw(df["date"], metadata.get("pair", ""))
             mask = ok & (df["up"] > k.get("explore_floor", 0.45)) & (h < explore * 1000)
             df.loc[mask, "enter_long"] = 1
             df.loc[mask, "enter_tag"] = "lern: ohne Signal, Modell " + (df.loc[mask, "up"] * 100).round().astype(int).astype(str) + " %"
@@ -105,7 +113,9 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
             except Exception as e:  # noqa: BLE001
                 log.warning("KI-Gedächtnis nicht verfügbar (%s)", e)
                 allowed = True
-        if allowed and self._is_live_like() and self.config.get("bot_name") in ("ki_trader",):
+        from kitb.shared_memory import KIS
+
+        if allowed and self._is_live_like() and self.config.get("bot_name") in KIS:
             self._shared_snapshot(pair, current_time, entry_tag)
         if allowed and self._is_live_like():
             try:

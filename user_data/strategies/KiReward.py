@@ -26,7 +26,7 @@ class KiReward(RiskManagedMixin, IStrategy):
     minimal_roi = {"0": 100.0}
     stoploss = -0.05
     process_only_new_candles = True
-    use_exit_signal = False
+    use_exit_signal = True  # nötig, damit Freqtrade custom_exit (Haltedauer) überhaupt aufruft; exit_long bleibt 0
     startup_candle_count = 900  # 200-Perioden-EMA auf 15m + Puffer
     order_types = {"entry": "market", "exit": "market", "stoploss": "market", "stoploss_on_exchange": False}
 

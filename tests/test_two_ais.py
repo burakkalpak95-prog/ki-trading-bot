@@ -122,3 +122,23 @@ def test_tests_never_touch_real_user_data():
 
     real = Path(__file__).resolve().parents[1] / "user_data"
     assert paths.USER_DATA != real and killswitch.path() != real / "KILL_SWITCH"
+
+
+def test_explore_draw_is_well_mixed_per_pair():
+    from kitb.ml_strategy import explore_draw
+
+    dates = pd.Series(pd.date_range("2026-01-01", periods=2000, freq="h", tz="UTC"))
+    for pair in ("BTC/USDT", "ADA/USDT", "LINK/USDT"):
+        picked = (explore_draw(dates, pair) < 400).to_numpy()
+        assert 0.33 < picked.mean() < 0.47
+        runs = np.diff(np.flatnonzero(np.diff(np.r_[0, picked.astype(int), 0]) != 0))
+        assert runs.max() < 20  # keine tagelangen Blöcke mit/ohne Lern-Trades
+
+
+def test_ki_reward_custom_exit_is_active():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("KiReward", paths.USER_DATA / "strategies" / "KiReward.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.KiReward.use_exit_signal is True  # sonst ruft Freqtrade custom_exit nie auf (Haltedauer)

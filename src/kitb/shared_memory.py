@@ -20,7 +20,7 @@ import pandas as pd
 
 from kitb import paths
 
-KIS = {"ki_trader": "KI 1 (Muster)", "ki_reward": "KI 2 (Belohnung)"}
+KIS = {"ki_trader": "KI 1 (Muster)", "ki_reward": "KI 2 (Belohnung)", "bot_a": "KI-Bot A", "bot_b": "KI-Bot B"}
 SNAPSHOT_FEATURES = ["ret_1h", "ret_4h", "ret_24h", "rsi_14", "natr_14", "dist_ema50", "dist_ema200", "rel_volume"]
 
 _SCHEMA = """

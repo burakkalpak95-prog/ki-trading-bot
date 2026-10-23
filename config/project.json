@@ -154,14 +154,14 @@
                 "verbose": -1,
                 "class_weight": "balanced"
             },
-            "$comment_practice": "Burak 23.10.2026 Regeln 1+3: stündlich neu trainieren; ~40 % Lern-Trades OHNE Signal (explore_floor 0); Signal-Trades zusätzlich durch das KI-Gedächtnis (aus den eigenen Trade-Ergebnissen) geprüft.",
+            "$comment_practice": "Burak 23.10.2026 Regeln 1+3: stündlich neu trainieren; ~40 % Lern-Trades OHNE Signal (explore_floor 0); Gedächtnis-Prüfung der Signal-Trades AUS (23.10.: das Gedächtnis kannte KiTrader noch nicht und lehnte jeden Einstieg ab).",
             "practice": {
                 "retrain_hours": 1,
                 "learning_entry_proba": 0.5,
                 "explore_share": 0.4,
                 "explore_floor": 0.0,
                 "max_hold_candles": 12,
-                "memory_gate_signals": true
+                "memory_gate_signals": false
             }
         }
     },
