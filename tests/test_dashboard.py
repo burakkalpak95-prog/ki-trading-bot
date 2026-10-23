@@ -152,3 +152,31 @@ def test_ai_filter_decisions_from_ki_bot_logs(home):
                    encoding="utf-8")
     df = D.ai_filter_decisions()
     assert list(df["Markt"]) == ["ETH/USDT", "BTC/USDT"] and list(df["Entscheidung"]) == ["erlaubt", "ausgelassen"]
+
+
+def test_ai_trades_view_labels_signal_and_learning_trades(home):
+    import sqlite3
+
+    db = home / "paper" / "ki_trader" / "tradesv3.dryrun.sqlite"
+    db.parent.mkdir(parents=True)
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE trades (id INTEGER, pair TEXT, is_open INT, open_date TEXT, close_date TEXT, "
+                "open_rate REAL, close_rate REAL, amount REAL, stake_amount REAL, close_profit REAL, "
+                "close_profit_abs REAL, enter_tag TEXT, exit_reason TEXT, fee_open REAL, fee_close REAL)")
+    con.executemany("INSERT INTO trades VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        (1, "SOL/USDT", 0, "2026-10-23 01:00:00", "2026-10-23 05:00:00", 100, 102, 10, 1000, 0.018, 18.0,
+         "signal: Modell 61 % · Bots: Donchian", "exit_signal", 0.001, 0.001),
+        (2, "ADA/USDT", 0, "2026-10-23 02:00:00", "2026-10-23 14:00:00", 1, 0.97, 1000, 1000, -0.032, -32.0,
+         "lern: ohne Signal, Modell 38 % · Bots: keiner", "lernhorizont", 0.001, 0.001),
+        (3, "BTC/USDT", 1, "2026-10-23 06:00:00", None, 80000, None, 0.01, 800, None, None,
+         "lern: ohne Signal, Modell 44 %", None, 0.001, 0.001)])
+    con.commit()
+    con.close()
+    df = D.ai_trades(eur_per_usdt=0.9, prices={"BTC/USDT": 80800})
+    assert len(df) == 3 and set(df["Typ"]) == {"Signal-Trade", "Lern-Trade"} and set(df["Richtung"]) == {"Long"}
+    btc = df[df["Asset"] == "BTC/USDT"].iloc[0]
+    assert btc["Status"] == "offen" and abs(btc["Ergebnis (%)"] - 0.8) < 0.01 and btc["Ergebnis (EUR)"] is not None
+    sm = D.ai_trades_summary(df, 10000)
+    assert sm["all"]["Trades"] == 2 and sm["all"]["Trefferquote"] == 0.5 and sm["open"] == 1
+    assert sm["by_kind"]["Signal-Trade"]["Ergebnis (USDT)"] == 18.0 and sm["by_kind"]["Lern-Trade"]["Trades"] == 1
+    assert abs(sm["all"]["Ergebnis (EUR)"] - (-14 * 0.9)) < 1e-6 and len(sm["curve"]) == 2

@@ -212,3 +212,36 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   Learning/Reinforcement Learning würde bei wenigen tausend Trades eher Rauschen auswendig lernen (Unsicher: kein
   eigener Vergleich auf diesen Daten). Ergebnis jeder Runde in `ai_memory/experiments-latest.json`, sichtbar im
   Dashboard unter „Was die KI gerade macht“ (inkl. jüngster Filter-Entscheidungen aus den Logs der _ki-Bots).
+- **KI handelt selbst** (Burak, 23.10.2026: „KI soll selber Trades betreiben, Bots dienen lediglich zur
+  Zusatzinformation“): Bot `ki_trader` (Strategie `KiTrader`, LightGBM/FreqAI, 1h, 8 Lern-Coins) bekommt die aktuellen
+  Einstiegssignale der sechs 1h-Regel-Bots als Merkmale. Im Paper-Lernmodus übt sie bewusst: Einstieg ab 50 %
+  Gewinnwahrscheinlichkeit plus ~40 % Übungstrades ab 35 % (Tag `ki_uebt`), Ausstieg spätestens nach 12 Stunden
+  (`max_hold_candles`), Neutraining alle 4 h. bot_a/bot_b üben schwächer (52 %, 15 % ab 45 %). Alle Risikolimits gelten
+  unverändert (inkl. Tagesverlustlimit 3 % – eine Lockerung bräuchte Buraks ausdrückliche Freigabe). Im Backtest und
+  mit freigegebenem Modell gibt es keine Übungstrades. Ansicht: Dashboard-Reiter „KI-Trades“.
+- **15-Minuten-Sammler**: die sechs 1h-Regeln zusätzlich auf 15m (`timeframe` je Paper-Strategie), damit häufiger
+  gehandelt wird. Regeln unverändert, nur öfter geprüft (Unsicher: Kennzahlen der Regeln sind auf 1h ausgelegt).
+
+## ADR-017: Zwei KIs mit gemeinsamem Gedächtnis (Burak, 23.10.2026)
+
+- **KI 1 „Muster“** (`ki_trader`, `KiTrader`): überwachtes Lernen (LightGBM über FreqAI) auf Indikatoren mehrerer
+  Zeitrahmen (1h + 1d) und den Signalen der Regel-Bots; stündliches Neutraining; Signal-Trades ab 50 % plus ~40 %
+  Lern-Trades ohne Signal; Ausstieg per Modell oder spätestens nach 12 h. Signal-Trades prüft zusätzlich das KI-Gedächtnis.
+- **KI 2 „Belohnung“** (`ki_reward`, `KiReward`, `kitb.reward_learner`): Contextual Bandit mit Thompson Sampling auf
+  15-Minuten-Kerzen. Aktionen: nicht handeln / kaufen und 1 h, 4 h oder 12 h halten. Belohnung = Gewinn nach Gebühren in %.
+  Bayes'sche lineare Regression je Aktion; lernt neu, sobald das gemeinsame Gedächtnis neue Trades enthält (≈ jede
+  Minute). Lern-Trades = Aktionen, die nur durch Unsicherheit/Zufall (ε 5 %) gewählt wurden.
+- **Warum sie sich ergänzen:** KI 1 lernt aus jeder Kerze („steigt der Kurs?“) – viele Beispiele, aber das Ziel ist nur
+  ein Stellvertreter für Gewinn. KI 2 lernt direkt aus dem echten Ergebnis inkl. Gebühren und Haltedauer – genau das
+  Ziel, aber mit wenigen Beispielen; durch Thompson Sampling erkundet sie gezielt dort, wo sie unsicher ist. Anderer
+  Zeitrahmen (15m vs. 1h) -> andere Fehler; beide lernen aus allen Trades beider KIs.
+- **Gemeinsames Gedächtnis** (`kitb.shared_memory`): jede KI hängt Einstiegsnotizen (Marktlage, Begründung, Art,
+  Aktion) nur an ihre eigene Datei `ai_memory/snapshots/<ki>.jsonl` an (fsync). Einziger Schreiber der Datenbank
+  `ai_memory/shared.sqlite` ist der Dienst `ai-memory` (jede Minute `sync`, idempotent per (KI, Runde, Trade-ID)).
+  So kann gleichzeitiges Schreiben nichts beschädigen, und nach Neustarts wird alles aus den Quellen nachgezogen.
+- **Ressourcen:** beide Modelle sind klassisches ML auf der CPU (LightGBM ~ Sekunden je Training, Bandit Millisekunden).
+  Kein Sprachmodell, die Grafikkarte wird nicht benötigt (gemessen: RTX 5070 Ti Laptop 12 GB, im Container nutzbar –
+  Reserve für einen späteren größeren Ansatz, z. B. kleines PPO-Netz). Unsicher: genaue RAM-Last aller Container zusammen.
+- **Sicherheit:** beide nur Paper (dry_run, eigenes Konto je KI mit 10.000 USDT, Runden bei Drawdown), alle Risikolimits je
+  KI unverändert (Tagesverlust 3 %, Position max. 40 %, max. 2 offene Positionen, Drawdown 15 %). Nur Long (Spot ohne
+  Hebel); Short würde Futures/Margin erfordern und ist laut Projektvorgaben gesperrt.

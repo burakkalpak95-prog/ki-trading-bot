@@ -202,7 +202,7 @@ def test_rule_strategy_paper_requires_human_approval(reg, tmp_path):
 
 def test_paper_ids_include_rule_strategies():
     ids = paper.paper_ids()
-    assert ids[:3] == ["bot_a", "bot_b", "trend_d1"] and "donchian_1h" in ids and 10 <= len(ids) <= 20
+    assert ids[:5] == ["bot_a", "bot_b", "ki_trader", "ki_reward", "trend_d1"] and "donchian_1h" in ids and 10 <= len(ids) <= 30
 
 
 def test_learning_mode_needs_human_approval_and_retrains_daily(reg, tmp_path):
@@ -213,7 +213,7 @@ def test_learning_mode_needs_human_approval_and_retrains_daily(reg, tmp_path):
     strategy_approval.approve(reg, "bot_a", by="Burak", reason="Lernmodus")
     _, cfg = paper.build_paper_config("bot_a", reg, tmp_path / "ud")
     assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True
-    assert cfg["freqai"]["live_retrain_hours"] == 24 and cfg["freqai"]["identifier"] == "paper-learn-bot_a"
+    assert cfg["freqai"]["live_retrain_hours"] == 4 and cfg["freqai"]["identifier"] == "paper-learn-bot_a"
     assert not cfg["exchange"].get("key")
 
 
@@ -265,3 +265,43 @@ def test_learn_broad_trade_narrow(reg, tmp_path):
     learn = paper.build_paper_config("bot_a", reg, tmp_path / "ud")[1]["exchange"]["pair_whitelist"]
     assert narrow == project["allowed_pairs"] == ["BTC/USDT", "ETH/USDT"]
     assert broad == learn == project["learning_pairs"] and len(broad) > 2
+
+
+def test_ki_trader_practices_in_learning_mode(reg, tmp_path):
+    from kitb import strategy_approval
+
+    strategy_approval.approve(reg, "ki_trader", by="Burak", reason="KI handelt selbst")
+    _, cfg = paper.build_paper_config("ki_trader", reg, tmp_path / "ud")
+    k = cfg["freqai"]["kitb"]
+    assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True
+    assert k["explore_share"] > 0 and k["max_hold_candles"] == 12 and k["entry_proba"] <= 0.5
+    assert len(cfg["exchange"]["pair_whitelist"]) == 8 and not cfg["exchange"].get("key")
+
+
+def test_rule_signals_are_features_for_ki_trader():
+    import importlib.util
+
+    import numpy as np
+    import pandas as pd
+
+    spec = importlib.util.spec_from_file_location("KiTrader", paths.USER_DATA / "strategies" / "KiTrader.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    rng = np.random.default_rng(0)
+    close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 1500)))
+    df = pd.DataFrame({"date": pd.date_range("2025-01-01", periods=1500, freq="h", tz="UTC"), "open": close,
+                       "high": close * 1.005, "low": close * 0.995, "close": close,
+                       "volume": rng.uniform(1, 10, 1500)})
+    sig = mod.rule_signals(df)
+    assert len(sig.columns) == 12 and sig.isin([0.0, 1.0]).all().all() and sig.iloc[:, :6].sum().sum() > 0
+
+
+def test_15m_collectors_trade_more_often(reg, tmp_path):
+    from kitb import strategy_approval
+
+    strategy_approval.approve(reg, "donchian_15m", by="Burak", reason="öfter handeln")
+    _, cfg = paper.build_paper_config("donchian_15m", reg, tmp_path / "ud")
+    assert cfg["timeframe"] == "15m" and cfg["kitb_mode"] == "explore" and cfg["dry_run"] is True
+    _, c1 = paper.build_paper_config("trend_d1", reg, tmp_path / "ud") if strategy_approval.approve(
+        reg, "trend_d1", by="Burak", reason="t") or True else (None, None)
+    assert "timeframe" not in c1

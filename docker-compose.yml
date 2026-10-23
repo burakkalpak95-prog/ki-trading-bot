@@ -60,6 +60,26 @@ services:
       - ./config:/kitb/config:ro
       - ./user_data:/kitb/user_data
 
+  # KI-Trader: die KI handelt selbst (Lernmodus, übt auch mit unsicheren Trades). Freigabe: strategies approve --id fleet
+  paper-ki-trader:
+    image: kitb:local
+    profiles: ["paper-learn"]
+    command: ["paper", "run", "--bot", "ki_trader"]
+    restart: on-failure
+    volumes:
+      - ./config:/kitb/config:ro
+      - ./user_data:/kitb/user_data
+
+  # KI 2 (Belohnungslerner, 15m). Freigabe: strategies approve --id fleet
+  paper-ki-reward:
+    image: kitb:local
+    profiles: ["paper-learn"]
+    command: ["paper", "run", "--bot", "ki_reward"]
+    restart: on-failure
+    volumes:
+      - ./config:/kitb/config:ro
+      - ./user_data:/kitb/user_data
+
   # Regel-Strategie DailyTrendSma (Tageskerzen) – eigenes Profil, damit sie ohne KI-Bots startet.
   # Voraussetzung: kitb strategies approve --id trend_d1 --by NAME --reason "..."
   # Start: docker compose --profile paper-trend up -d   ·   Stopp: docker compose --profile paper-trend stop
@@ -117,6 +137,24 @@ services:
   paper-momentum-d1-ki:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "momentum_d1_ki"]
+  paper-ema-cross-15m:
+    <<: *paper-fleet
+    command: ["paper", "run", "--bot", "ema_cross_15m"]
+  paper-trend-adx-15m:
+    <<: *paper-fleet
+    command: ["paper", "run", "--bot", "trend_adx_15m"]
+  paper-macd-rsi-15m:
+    <<: *paper-fleet
+    command: ["paper", "run", "--bot", "macd_rsi_15m"]
+  paper-bollinger-15m:
+    <<: *paper-fleet
+    command: ["paper", "run", "--bot", "bollinger_15m"]
+  paper-donchian-15m:
+    <<: *paper-fleet
+    command: ["paper", "run", "--bot", "donchian_15m"]
+  paper-squeeze-15m:
+    <<: *paper-fleet
+    command: ["paper", "run", "--bot", "squeeze_15m"]
 
   # KI-Gedächtnis: einmal täglich alle Trades sammeln, KI-Filter neu lernen und auf ungesehenen Trades prüfen.
   ai-memory:

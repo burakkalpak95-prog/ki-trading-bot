@@ -65,9 +65,18 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
         freqai["feature_parameters"].update(spec["feature_parameters"])
         freqai["model_training_parameters"] = spec["model_training_parameters"]
         freqai["identifier"] = f"paper-learn-{bot}"
-        hours = project.get("paper_learning", {}).get("retrain_hours", 24)
+        # Üben statt warten (Burak, 23.10.2026): niedrigere Einstiegsschwelle + Anteil Lern-Trades, nur Paper-Lernmodus.
+        pl = {**project.get("paper_learning", {}), **spec.get("practice", {})}
+        hours = pl.get("retrain_hours", 24)
         freqai["live_retrain_hours"] = hours
-        freqai["expiration_hours"] = hours * 2
+        freqai["expiration_hours"] = max(hours * 2, 2)
+        kitb = freqai.setdefault("kitb", {})
+        kitb["entry_proba"] = pl.get("learning_entry_proba", kitb.get("entry_proba", 0.6))
+        kitb["explore_share"] = pl.get("explore_share", 0.0)
+        kitb["explore_floor"] = pl.get("explore_floor", 0.45)
+        if pl.get("max_hold_candles"):
+            kitb["max_hold_candles"] = pl["max_hold_candles"]
+        kitb["memory_gate_signals"] = bool(pl.get("memory_gate_signals"))
     d = paper_dir(bot, user_data_dir)
     d.mkdir(parents=True, exist_ok=True)
     cfg = load_freqtrade_config()
@@ -121,9 +130,13 @@ def _build_rule_config(paper_id: str, reg: Registry, project: dict[str, Any],
         "kitb_ai_filter": bool(project["paper_strategies"][paper_id].get("ai_filter")
                                and project.get("paper_learning", {}).get("apply_ai_filter")),
     })
-    cfg.pop("timeframe", None)  # Zeitintervall kommt aus der Strategie (z. B. 1d)
+    cfg.pop("timeframe", None)  # Zeitintervall kommt aus der Strategie (z. B. 1d) ...
+    if project["paper_strategies"][paper_id].get("timeframe"):
+        # ... außer bei Sammlern mit eigenem Intervall (z. B. 15m: dieselbe Regel, häufiger geprüft)
+        cfg["timeframe"] = project["paper_strategies"][paper_id]["timeframe"]
+    cfg["kitb_practice"] = project["paper_strategies"][paper_id].get("practice", {})
     pairs = project["allowed_pairs"]
-    if cfg["kitb_mode"] == "explore":
+    if cfg["kitb_mode"] in ("explore", "learning"):
         pairs = _use_learning_pairs(cfg, project)
     problems = check_paper_config(cfg, project["allowed_exchanges"], pairs,
                                   str((user_data_dir or paths.USER_DATA).resolve() / "paper"))

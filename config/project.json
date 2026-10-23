@@ -124,6 +124,45 @@
                 "verbose": -1,
                 "class_weight": "balanced"
             }
+        },
+        "ki_trader": {
+            "description": "KI 1 (Muster): die KI handelt selbst (LightGBM), nutzt die Signale der Regel-Bots als Zusatzinformation und übt bewusst auch mit unsicheren Trades",
+            "strategy": "KiTrader",
+            "freqaimodel": "KitbLightGBMClassifier",
+            "feature_parameters": {
+                "include_timeframes": [
+                    "1h",
+                    "1d"
+                ],
+                "include_corr_pairlist": [
+                    "BTC/USDT",
+                    "ETH/USDT"
+                ],
+                "indicator_periods_candles": [
+                    10,
+                    20,
+                    50
+                ],
+                "include_shifted_candles": 2
+            },
+            "model_training_parameters": {
+                "n_estimators": 300,
+                "learning_rate": 0.05,
+                "num_leaves": 31,
+                "random_state": 42,
+                "n_jobs": 4,
+                "verbose": -1,
+                "class_weight": "balanced"
+            },
+            "$comment_practice": "Burak 23.10.2026 Regeln 1+3: stündlich neu trainieren; ~40 % Lern-Trades OHNE Signal (explore_floor 0); Signal-Trades zusätzlich durch das KI-Gedächtnis (aus den eigenen Trade-Ergebnissen) geprüft.",
+            "practice": {
+                "retrain_hours": 1,
+                "learning_entry_proba": 0.5,
+                "explore_share": 0.4,
+                "explore_floor": 0.0,
+                "max_hold_candles": 12,
+                "memory_gate_signals": true
+            }
         }
     },
     "agents": {
@@ -142,6 +181,14 @@
         }
     },
     "paper_strategies": {
+        "ki_reward": {
+            "strategy": "KiReward",
+            "description": "KI 2 (Belohnung): lernt aus Gewinn/Verlust je Trade (Contextual Bandit, Thompson Sampling), 15-Minuten-Kerzen, wählt selbst Haltedauer 1/4/12 h, lernt aus dem gemeinsamen Gedächtnis beider KIs",
+            "mode": "learning",
+            "practice": {
+                "explore_share": 0.05
+            }
+        },
         "trend_d1": {
             "strategy": "DailyTrendSma",
             "description": "Regel-Strategie: Tagesschluss über SMA 200 (bestand Vorperiode 2019–2021 und Test-Abschnitt)",
@@ -223,12 +270,52 @@
             "description": "Wie momentum_d1, aber mit KI-Filter",
             "mode": "explore",
             "ai_filter": true
+        },
+        "ema_cross_15m": {
+            "strategy": "BaselineEmaCross",
+            "description": "Datensammler: Trendfolge, EMA-Kreuzung, 15-Minuten-Kerzen (handelt häufiger)",
+            "mode": "explore",
+            "timeframe": "15m"
+        },
+        "trend_adx_15m": {
+            "strategy": "TrendEmaAdx",
+            "description": "Datensammler: Trendfolge mit ADX, 15-Minuten-Kerzen (handelt häufiger)",
+            "mode": "explore",
+            "timeframe": "15m"
+        },
+        "macd_rsi_15m": {
+            "strategy": "MomentumMacdRsi",
+            "description": "Datensammler: Momentum, MACD + RSI, 15-Minuten-Kerzen (handelt häufiger)",
+            "mode": "explore",
+            "timeframe": "15m"
+        },
+        "bollinger_15m": {
+            "strategy": "MeanReversionBollinger",
+            "description": "Datensammler: Rückkehr zum Mittelwert, Bollinger, 15-Minuten-Kerzen (handelt häufiger)",
+            "mode": "explore",
+            "timeframe": "15m"
+        },
+        "donchian_15m": {
+            "strategy": "BreakoutDonchian",
+            "description": "Datensammler: Ausbruch, Donchian, 15-Minuten-Kerzen (handelt häufiger)",
+            "mode": "explore",
+            "timeframe": "15m"
+        },
+        "squeeze_15m": {
+            "strategy": "VolatilitySqueeze",
+            "description": "Datensammler: Volatilitäts-Ausbruch (Squeeze), 15-Minuten-Kerzen (handelt häufiger)",
+            "mode": "explore",
+            "timeframe": "15m"
         }
     },
     "paper_learning": {
         "$comment": "Lernmodus der KI-Bots und Datensammler im Paper-Trading (Freigabe Burak, 22.10.2026). Nur virtuelles Kapital.",
-        "retrain_hours": 24,
-        "memory_every_hours": 4,
+        "retrain_hours": 4,
+        "memory_every_hours": 1,
+        "$comment_practice": "KI-Bots üben im Paper-Lernmodus (Burak 23.10.2026): Einstieg ab 52 % statt 60 % plus ~15 % Übungstrades ab 45 % (Tag „lern: …“); ki_trader übt stärker (eigene practice-Werte).",
+        "learning_entry_proba": 0.52,
+        "explore_share": 0.15,
+        "explore_floor": 0.45,
         "refill_on_drawdown": true,
         "apply_ai_filter": true
     }

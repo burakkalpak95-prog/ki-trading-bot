@@ -54,14 +54,32 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
         return self.freqai.start(dataframe, metadata, self)
 
     def populate_entry_trend(self, df: DataFrame, metadata: dict) -> DataFrame:
-        df.loc[(df["do_predict"] == 1) & (df["up"] > self._kitb()["entry_proba"]) & (df["volume"] > 0),
-               ["enter_long", "enter_tag"]] = (1, "ml_up")
+        k = self._kitb()
+        ok = (df["do_predict"] == 1) & (df["volume"] > 0)
+        explore = float(k.get("explore_share", 0.0))
+        if explore > 0:
+            # Nur Lernmodus im Paper-Trading (Burak, 23.10.2026): die KI geht gezielt auch Trades ohne Signal ein
+            # (Lern-Trades), damit sie Negativdaten sammelt. Auswahl deterministisch je Kerze und Markt (nachvollziehbar).
+            h = (df["date"].astype("int64") // 3_600_000_000_000 + sum(map(ord, metadata.get("pair", "")))) % 1000
+            mask = ok & (df["up"] > k.get("explore_floor", 0.45)) & (h < explore * 1000)
+            df.loc[mask, "enter_long"] = 1
+            df.loc[mask, "enter_tag"] = "lern: ohne Signal, Modell " + (df.loc[mask, "up"] * 100).round().astype(int).astype(str) + " %"
+        sig = ok & (df["up"] > k["entry_proba"])
+        df.loc[sig, "enter_long"] = 1
+        df.loc[sig, "enter_tag"] = "signal: Modell " + (df.loc[sig, "up"] * 100).round().astype(int).astype(str) + " %"
         return df
 
     def populate_exit_trend(self, df: DataFrame, metadata: dict) -> DataFrame:
         df.loc[(df["up"] < self._kitb()["exit_proba"]) & (df["volume"] > 0),
                ["exit_long", "exit_tag"]] = (1, "ml_weak")
         return df
+
+    def custom_exit(self, pair, trade, current_time, current_rate, current_profit, **kwargs):
+        """Lernmodus: Übungstrades spätestens nach ``max_hold_candles`` schließen, damit Ergebnisse entstehen."""
+        limit = self._kitb().get("max_hold_candles")
+        if limit and (current_time - trade.open_date_utc).total_seconds() >= limit * 3600:
+            return "lernhorizont"
+        return None
 
     # --- Entscheidungsprotokoll im Paper-Trading (im Backtest übernimmt das kitb.decisions) ---
     def _registry(self):
@@ -74,6 +92,21 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
                             **kwargs) -> bool:
         allowed = super().confirm_trade_entry(pair, order_type, amount, rate, time_in_force, current_time,
                                               entry_tag, side, **kwargs)
+        if (allowed and self._is_live_like() and self._kitb().get("memory_gate_signals")
+                and str(entry_tag or "").startswith("signal")):
+            # Rückkopplung: Signal-Trades prüft zusätzlich das KI-Gedächtnis, das aus den eigenen Trade-Ergebnissen lernt.
+            # Lern-Trades bleiben ungefiltert, damit weiter Daten entstehen. Fehler -> erlauben.
+            try:
+                from kitb import ai_memory
+
+                allowed, p = ai_memory.allow_entry(strategy=type(self).__name__, pair=pair, when=current_time)
+                log.info("KI-Gedächtnis %s: Gewinnchance %s -> %s", pair, "?" if p is None else f"{p:.0%}",
+                         "erlaubt" if allowed else "ausgelassen")
+            except Exception as e:  # noqa: BLE001
+                log.warning("KI-Gedächtnis nicht verfügbar (%s)", e)
+                allowed = True
+        if allowed and self._is_live_like() and self.config.get("bot_name") in ("ki_trader",):
+            self._shared_snapshot(pair, current_time, entry_tag)
         if allowed and self._is_live_like():
             try:
                 df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
@@ -91,6 +124,21 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
             except Exception:  # Protokollfehler dürfen den Handel nicht beeinflussen
                 log.exception("Entscheidung konnte nicht protokolliert werden")
         return allowed
+
+    def _shared_snapshot(self, pair, current_time, entry_tag) -> None:
+        """Einstieg ins gemeinsame Gedächtnis beider KIs notieren (Fehler beeinflussen den Handel nicht)."""
+        try:
+            from kitb import shared_memory
+            from freqtrade.exchange import timeframe_to_minutes
+
+            df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+            snap = shared_memory.market_snapshot(df, timeframe_to_minutes(self.timeframe)).iloc[-1]
+            tag = str(entry_tag or "")
+            shared_memory.snapshot(self.config["bot_name"], pair=pair, when=current_time,
+                                   kind="learn" if tag.startswith("lern") else "signal", reason=tag,
+                                   features=snap.to_dict(), timeframe=self.timeframe)
+        except Exception:  # noqa: BLE001
+            log.exception("Gemeinsames Gedächtnis: Einstieg konnte nicht notiert werden")
 
     def confirm_trade_exit(self, pair, trade, order_type, amount, rate, time_in_force, exit_reason, current_time,
                            **kwargs) -> bool:

@@ -253,9 +253,12 @@ def cmd_memory(args) -> int:
     """KI-Gedächtnis: seed (einmalig historische Trades), daily (sammeln + lernen + prüfen), loop (alle paar Stunden), status."""
     import time
 
-    from kitb import ai_memory
+    from kitb import ai_memory, shared_memory
 
     reg = Registry(paths.REGISTRY_DB)
+    if args.action == "sync":
+        print(f"Gemeinsames Gedächtnis: {shared_memory.sync()} neue Trades")
+        return 0
     if args.action == "seed":
         n = ai_memory.seed_from_backtests(datadir=paths.DATA_DIR / args.source, data_source=args.source)
         print(f"{n} historische Trades ins KI-Gedächtnis gelegt.")
@@ -275,7 +278,16 @@ def cmd_memory(args) -> int:
                 return 1
         if args.action == "daily":
             return 0
-        time.sleep(max(60.0, (ai_memory.next_training() - pd.Timestamp.now(tz="UTC")).total_seconds()))
+        due = ai_memory.next_training()
+        while pd.Timestamp.now(tz="UTC") < due:
+            # Gemeinsames Gedächtnis beider KIs jede Minute aktualisieren (einziger Schreiber, siehe kitb.shared_memory).
+            try:
+                n = shared_memory.sync()
+                if n:
+                    print(f"Gemeinsames Gedächtnis: {n} neue Trades")
+            except Exception as e:  # noqa: BLE001
+                print(f"Gemeinsames Gedächtnis: Fehler {e}", file=sys.stderr)
+            time.sleep(60.0)
 
 
 def cmd_killswitch(args) -> int:
@@ -490,7 +502,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_strategies)
 
     s = sub.add_parser("memory", help="KI-Gedächtnis: seed | daily | loop | status (nur Paper-Daten, kein Handel)")
-    s.add_argument("action", choices=["seed", "daily", "loop", "status"])
+    s.add_argument("action", choices=["seed", "daily", "loop", "status", "sync"])
     s.add_argument("--source", default="binance")
     s.set_defaults(func=cmd_memory)
 

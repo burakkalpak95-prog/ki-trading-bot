@@ -366,3 +366,92 @@ def ai_filter_decisions(n: int = 30, user_data: Path | None = None) -> pd.DataFr
                              "Entscheidung": m.group(3)})
     df = pd.DataFrame(rows, columns=["Zeit (UTC)", "Bot", "Markt", "Gewinnchance", "Entscheidung"])
     return df.sort_values("Zeit (UTC)", ascending=False).head(n).reset_index(drop=True)
+
+
+AI_BOTS = ("ki_trader", "ki_reward", "bot_a", "bot_b")  # Bots, in denen die KI selbst handelt
+
+
+def fetch_eur_per_usdt(exchange_id: str = "binance") -> float | None:
+    """Umrechnung USDT -> EUR über den öffentlichen Kurs EUR/USDT (ohne Konto). None, wenn nicht abrufbar."""
+    try:
+        import ccxt
+
+        ex = getattr(ccxt, exchange_id)({"enableRateLimit": True, "timeout": 10000})
+        last = ex.fetch_ticker("EUR/USDT")["last"]
+        return 1.0 / float(last) if last else None
+    except Exception:  # noqa: BLE001 – offline: Anzeige nur in USDT
+        return None
+
+
+def trade_kind(tag: Any) -> str:
+    return "Lern-Trade" if str(tag or "").startswith(("lern", "ki_uebt")) else "Signal-Trade"
+
+
+def ai_trades(user_data: Path | None = None, eur_per_usdt: float | None = None,
+              prices: dict[str, float] | None = None, bots: tuple[str, ...] = AI_BOTS) -> pd.DataFrame:
+    """Alle Trades der KI (alle Runden), je Trade eine Zeile. Offene Positionen mit aktuellem Kurs aus ``prices``."""
+    rows = []
+    for bot in bots:
+        base = (user_data or paths.USER_DATA) / "paper" / bot
+        dbs = [(f"Runde {i + 1}", db) for i, db in enumerate(sorted((base / "rounds").glob("round-*.sqlite")))]
+        dbs.append((f"Runde {len(dbs) + 1}", base / "tradesv3.dryrun.sqlite"))
+        for rnd, db in dbs:
+            t = _query(db, "SELECT pair, is_open, open_date, close_date, open_rate, close_rate, amount, stake_amount, "
+                           "close_profit, close_profit_abs, enter_tag, exit_reason, fee_open, fee_close FROM trades")
+            for _, r in t.iterrows():
+                is_open = r["is_open"] == 1
+                exit_px = (prices or {}).get(r["pair"]) if is_open else r["close_rate"]
+                if is_open and exit_px:
+                    fees = (r["fee_open"] or 0) + (r["fee_close"] or 0)
+                    pct = float(exit_px) / float(r["open_rate"]) - 1 - fees
+                    usdt = pct * float(r["stake_amount"])
+                elif is_open:
+                    pct = usdt = None
+                else:
+                    pct, usdt = float(r["close_profit"] or 0), float(r["close_profit_abs"] or 0)
+                rows.append({
+                    "Bot": {"ki_trader": "KI 1 (Muster)", "ki_reward": "KI 2 (Belohnung)"}.get(bot, bot), "Runde": rnd, "Status": "offen" if is_open else "geschlossen",
+                    "Einstieg (UTC)": pd.Timestamp(r["open_date"]), "Ausstieg (UTC)": None if is_open else pd.Timestamp(r["close_date"]),
+                    "Asset": r["pair"], "Richtung": "Long", "Menge": round(float(r["amount"]), 6),
+                    "Positionsgröße (USDT)": round(float(r["stake_amount"]), 2),
+                    "Einstiegspreis": float(r["open_rate"]), "Ausstiegspreis": None if exit_px is None else float(exit_px),
+                    "Ergebnis (%)": None if pct is None else round(pct * 100, 2),
+                    "Ergebnis (USDT)": None if usdt is None else round(usdt, 2),
+                    "Ergebnis (EUR)": None if usdt is None or eur_per_usdt is None else round(usdt * eur_per_usdt, 2),
+                    "Typ": trade_kind(r["enter_tag"]), "Grund": str(r["enter_tag"] or ""),
+                    "Ausstiegsgrund": "" if is_open else str(r["exit_reason"] or "")})
+    cols = ["Bot", "Runde", "Status", "Einstieg (UTC)", "Ausstieg (UTC)", "Asset", "Richtung", "Menge",
+            "Positionsgröße (USDT)", "Einstiegspreis", "Ausstiegspreis", "Ergebnis (%)", "Ergebnis (USDT)",
+            "Ergebnis (EUR)", "Typ", "Grund", "Ausstiegsgrund"]
+    df = pd.DataFrame(rows, columns=cols)
+    return df.sort_values("Einstieg (UTC)", ascending=False).reset_index(drop=True) if not df.empty else df
+
+
+def ai_trades_summary(df: pd.DataFrame, starting_balance: float) -> dict[str, Any]:
+    """Kennzahlen gesamt und getrennt nach Signal-/Lern-Trades (nur geschlossene Trades) plus Kontokurve."""
+    closed = df[df["Status"] == "geschlossen"] if not df.empty else df
+
+    def stats(d: pd.DataFrame) -> dict[str, Any]:
+        n = len(d)
+        return {"Trades": n, "Trefferquote": None if n == 0 else float((d["Ergebnis (USDT)"] > 0).mean()),
+                "Ergebnis (USDT)": float(d["Ergebnis (USDT)"].sum()) if n else 0.0,
+                "Ergebnis (EUR)": float(d["Ergebnis (EUR)"].sum()) if n and d["Ergebnis (EUR)"].notna().all() else None,
+                "Ø je Trade (%)": None if n == 0 else float(d["Ergebnis (%)"].mean())}
+
+    by_kind = {k: stats(closed[closed["Typ"] == k]) if not closed.empty else stats(closed)
+               for k in ("Signal-Trade", "Lern-Trade")}
+    curve = pd.DataFrame()
+    if not closed.empty:
+        c = closed.sort_values("Ausstieg (UTC)")
+        curve = pd.DataFrame({"Zeit": c["Ausstieg (UTC)"].values,
+                              "Ergebnis kumuliert (USDT)": c["Ergebnis (USDT)"].cumsum().values})
+    by_ki = {b: stats(closed[closed["Bot"] == b]) for b in sorted(df["Bot"].unique())} if not df.empty else {}
+    return {"all": stats(closed), "by_kind": by_kind, "by_ki": by_ki, "open": int((df["Status"] == "offen").sum()) if not df.empty else 0,
+            "curve": curve, "starting_balance": starting_balance}
+
+
+def ki_trader_running(bot: str = "ki_trader", user_data: Path | None = None) -> tuple[bool, int | None]:
+    from kitb import paper
+
+    age = paper._log_age_seconds(bot, user_data)
+    return age is not None and age <= paper.HEARTBEAT_MAX_AGE_S, age

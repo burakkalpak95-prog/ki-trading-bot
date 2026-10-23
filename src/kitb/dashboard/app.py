@@ -25,7 +25,7 @@ ks = status["kill_switch"]
 if ks:
     st.error(f"NOT-STOPP AKTIV seit {ks.get('activated_at')} – Grund: {ks.get('reason')} (durch {ks.get('by')})")
 
-overview_tab, learned_tab, *tabs = st.tabs(["Übersicht", "Was hat die KI gelernt?", "Status", "Kurse & Signale", "Paper-Trading", "Bot A vs. Bot B",
+ki_tab, overview_tab, learned_tab, *tabs = st.tabs(["KI-Trades", "Übersicht", "Was hat die KI gelernt?", "Status", "Kurse & Signale", "Paper-Trading", "Bot A vs. Bot B",
                                "Strategien", "Entscheidungen", "Modelle", "Datenqualität", "Fehler", "Not-Stopp"])
 
 
@@ -209,6 +209,91 @@ def ai_activity() -> None:
     else:
         st.dataframe(dec, hide_index=True, width="stretch")
 
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _eur_rate(exchange_id: str) -> float | None:
+    return D.fetch_eur_per_usdt(exchange_id)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _live_prices(exchange_id: str, pairs: tuple[str, ...]) -> dict[str, float]:
+    out = {}
+    for p in pairs:
+        try:
+            out[p] = float(_daily(exchange_id, p)["close"].iloc[-1])
+        except Exception:  # noqa: BLE001 – offline: offene Positionen ohne aktuellen Kurs
+            pass
+    return out
+
+
+@st.fragment(run_every=30)
+def ki_trades_page() -> None:
+    """Alle Trades der KI (Regel 2, Burak 23.10.2026). Aktualisiert sich alle 30 s."""
+    ft = load_freqtrade_config()
+    ex = ft["exchange"]["name"]
+    running, age = D.ki_trader_running()
+    if running:
+        st.success(f"🟢 Die KI handelt gerade selbst (Paper-Trading, virtuelles Geld). Lebenszeichen vor {age} s.")
+    elif age is None:
+        st.warning("⚪ Der KI-Trader wurde noch nie gestartet. In Trading-Bot.bat auf START drücken.")
+    else:
+        st.error(f"🔴 Der KI-Trader läuft nicht (letztes Lebenszeichen vor {age // 60} min).")
+    eur = _eur_rate(ex)
+    pairs = tuple(project.get("learning_pairs") or project["allowed_pairs"])
+    df = D.ai_trades(eur_per_usdt=eur, prices=_live_prices(ex, pairs))
+    if df.empty:
+        st.info("Noch keine KI-Trades. Nach dem Start trainiert der KI-Trader zuerst (einige Minuten) und prüft dann "
+                "jede Stunde alle Coins – mit Signal-Trades und gezielten Lern-Trades ohne Signal.")
+        return
+    f1, f2, f3, f4 = st.columns(4)
+    days = f1.selectbox("Zeitraum", ["alles", "heute", "7 Tage", "30 Tage"], key="ki_period")
+    assets = f2.multiselect("Asset", sorted(df["Asset"].unique()), key="ki_assets")
+    kinds = f3.multiselect("Trade-Typ", ["Signal-Trade", "Lern-Trade"], key="ki_kinds")
+    bots = f4.multiselect("KI", sorted(df["Bot"].unique()), key="ki_bots")
+    v = df
+    if days != "alles":
+        now = pd.Timestamp.now(tz="UTC")
+        since = now.normalize() if days == "heute" else now - pd.Timedelta(days=int(days.split()[0]))
+        v = v[pd.to_datetime(v["Einstieg (UTC)"], utc=True) >= since]
+    if assets:
+        v = v[v["Asset"].isin(assets)]
+    if kinds:
+        v = v[v["Typ"].isin(kinds)]
+    if bots:
+        v = v[v["Bot"].isin(bots)]
+    sm = D.ai_trades_summary(v, ft["dry_run_wallet"])
+    a = sm["all"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Trades (geschlossen)", a["Trades"], f"{sm['open']} offen", delta_color="off")
+    c2.metric("Trefferquote", "–" if a["Trefferquote"] is None else f"{a['Trefferquote']:.0%}")
+    c3.metric("Gesamtergebnis", f"{a['Ergebnis (EUR)']:+,.2f} €" if a["Ergebnis (EUR)"] is not None
+              else f"{a['Ergebnis (USDT)']:+,.2f} USDT")
+    c4.metric("Ø je Trade", "–" if a["Ø je Trade (%)"] is None else f"{a['Ø je Trade (%)']:+.2f} %")
+    st.write("**KI 1 vs. KI 2** (nebeneinander)")
+    st.dataframe(pd.DataFrame(sm["by_ki"]), width="stretch")
+    if not sm["curve"].empty:
+        c = v[v["Status"] == "geschlossen"].sort_values("Ausstieg (UTC)")
+        st.line_chart(c.assign(k=c.groupby("Bot")["Ergebnis (USDT)"].cumsum())
+                      .pivot_table(index="Ausstieg (UTC)", columns="Bot", values="k").ffill())
+    st.write("**Signal-Trades vs. Lern-Trades** (getrennt ausgewertet)")
+    st.dataframe(pd.DataFrame(sm["by_kind"]).T, width="stretch")
+    if not sm["curve"].empty:
+        st.write("**Kontokurve** (kumuliertes Ergebnis der geschlossenen Trades, USDT)")
+        st.line_chart(sm["curve"].set_index("Zeit"))
+    open_pos = v[v["Status"] == "offen"]
+    if not open_pos.empty:
+        st.write("**Offene Positionen (live)**")
+        st.dataframe(open_pos, hide_index=True, width="stretch")
+    st.write("**Alle Trades**")
+    st.dataframe(v, hide_index=True, width="stretch")
+    st.caption(("Euro umgerechnet zum aktuellen Kurs EUR/USDT (Konto rechnet in USDT). " if eur else
+                "Euro-Kurs nicht abrufbar – Anzeige in USDT. ")
+               + "Nur Long: Spot-Handel ohne Hebel, Leerverkäufe (Short) sind gesperrt. Gebühren sind eingerechnet; "
+                 "Spread/Slippage bildet das Paper-Trading nur näherungsweise ab (Unsicher). Zeiten in UTC (+2 Std.).")
+
+
+with ki_tab:
+    ki_trades_page()
 
 with learned_tab:
     learned_page()

@@ -160,6 +160,9 @@ gelernt?“. Lern-/Sammler-Bots beginnen bei Verlustlimit eine neue Runde mit 10
 auszulösen. Ob die KI dadurch besser wird, ist offen (Weiß ich nicht) – die Seite misst es auf ungesehenen Trades.
 Seit 22.10. abends: tägliche Experimente mit ~15 Lernmethoden (Walk-Forward, Ensemble der besten 3, Filter nur bei
 nachgewiesenem Vorteil); Startwissen aus Backtests je Coin einzeln. Anzeige „Was die KI gerade macht“.
+Seit 23.10. (ADR-017, Burak): **zwei KIs handeln selbst** im Paper-Trading – KI 1 „Muster“ (ki_trader, LightGBM, 1h,
+stündliches Training, Lern-Trades ohne Signal) und KI 2 „Belohnung“ (ki_reward, Contextual Bandit, 15m) – mit
+gemeinsamem Gedächtnis (ai_memory/shared.sqlite). Dazu 6 Sammler auf 15m. Dashboard-Reiter „KI-Trades“. Tests: 199 bestanden.
 Tests (Cloud-venv): 184 bestanden.
 
 ## Erreichte Datenquellen (22.10.2026)

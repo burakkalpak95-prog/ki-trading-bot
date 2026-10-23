@@ -60,7 +60,7 @@ def ml_env(tmp_path_factory):
     return data, ud
 
 
-@pytest.mark.parametrize("bot", ["bot_a", "bot_b"])
+@pytest.mark.parametrize("bot", ["bot_a", "bot_b", "ki_trader"])
 def test_bot_runs_walk_forward_and_measures_resources(bot, ml_env, tmp_path):
     data, ud = ml_env
     r = run_bot(bot, timerange="20230501-20230701", datadir=data, data_source="synthetic", offline=True,
@@ -98,8 +98,8 @@ def test_ml_compare_registers_candidates_but_never_activates(ml_env, tmp_path):
                      results_dir=tmp_path / "res", user_data_dir=ud, report_dir=tmp_path / "rep", keep_models=False)
     reg = Registry(reg_path)
     versions = reg.fetch("model_versions", 10)
-    assert {v["bot"] for v in versions} == {"bot_a", "bot_b"}
+    assert {v["bot"] for v in versions} == {"bot_a", "bot_b", "ki_trader"}
     assert all(v["status"] in ("passed", "failed") and v["approved_by"] is None for v in versions)
-    assert models.active(reg, "bot_a") is None and models.active(reg, "bot_b") is None
+    assert all(models.active(reg, b) is None for b in ("bot_a", "bot_b", "ki_trader"))
     assert "verdict" in rep["results"]["validation"]
     assert rep["test_set_used"] is False
