@@ -86,3 +86,12 @@ def test_ki_reward_paper_config(tmp_path):
     _, cfg = paper.build_paper_config("ki_reward", reg, tmp_path / "ud")
     assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True and cfg["kitb_practice"]["explore_share"] > 0
     assert len(cfg["exchange"]["pair_whitelist"]) == 8 and not cfg["exchange"].get("key")
+
+
+def test_fleet_approval_includes_both_ais(ud, capsys):
+    from kitb import cli
+
+    assert cli.main(["strategies", "approve", "--id", "fleet", "--by", "Burak", "--reason", "zwei KIs"]) in (0, None)
+    out = capsys.readouterr().out
+    assert "für ki_trader." in out and "für ki_reward." in out and "für donchian_15m." in out
+    assert "für trend_d1." not in out  # Kandidat bleibt eigene Freigabe

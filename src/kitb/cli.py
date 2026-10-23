@@ -311,8 +311,8 @@ def cmd_strategies(args) -> int:
     project = load_project_config()
     ids = list(project.get("paper_strategies", {})) + list(project["bots"])
     try:
-        # "fleet" = alle Datensammler (mode explore) + KI-Bots im Lernmodus in einem Schritt.
-        targets = ([i for i, v in project.get("paper_strategies", {}).items() if v.get("mode") == "explore"]
+        # "fleet" = alle Datensammler (mode explore) + alle KIs im Lernmodus in einem Schritt.
+        targets = ([i for i, v in project.get("paper_strategies", {}).items() if v.get("mode") in ("explore", "learning")]
                    + list(project["bots"])) if args.id == "fleet" else [args.id]
         if args.action == "approve":
             for t in targets:
@@ -323,7 +323,7 @@ def cmd_strategies(args) -> int:
         else:
             specs = {**project["bots"], **project.get("paper_strategies", {})}
             _print([{"id": i, "strategy": specs[i]["strategy"], "description": specs[i]["description"],
-                     "mode": "Lernmodus (KI)" if i in project["bots"] else "Regel-Strategie",
+                     "mode": "Lernmodus (KI)" if i in project["bots"] or specs[i].get("mode") == "learning" else "Regel-Strategie",
                      "approval": strategy_approval.current(reg, i)} for i in ids])
     except GovernanceError as e:
         print(f"Abgelehnt: {e}", file=sys.stderr)
