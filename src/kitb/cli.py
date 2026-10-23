@@ -304,6 +304,16 @@ def cmd_flow(args) -> int:
     return 0
 
 
+def cmd_methods(args) -> int:
+    """Methoden-Suche: Trading-Methoden mit ≥ 60 % Treffern und Gewinn nach Gebühren finden (nur Backtests)."""
+    from kitb import methods
+
+    res = methods.run(data_source=args.source, timeframes=args.timeframes or None)
+    print(Path(res["report"]).read_text(encoding="utf-8"))
+    _print(res)
+    return 0
+
+
 def cmd_killswitch(args) -> int:
     from kitb import killswitch
 
@@ -523,6 +533,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("flow", help="Marktdaten für die KIs: update (einmal, lädt Verlauf nach) | loop (Dienst) | status")
     s.add_argument("action", choices=["update", "loop", "status"])
     s.set_defaults(func=cmd_flow)
+
+    s = sub.add_parser("methods", help="Methoden-Suche: ≥ 60 %% Treffer + Gewinn nach Gebühren, früh UND spät (Backtests)")
+    s.add_argument("action", choices=["scan"])
+    s.add_argument("--source", default="binance")
+    s.add_argument("--timeframes", nargs="*")
+    s.set_defaults(func=cmd_methods)
 
     s = sub.add_parser("live", help="Live-Trading ist GESPERRT. Nur: readiness (Checkliste), confirm-risk")
     s.add_argument("action", choices=["readiness", "confirm-risk"])
