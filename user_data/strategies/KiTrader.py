@@ -99,6 +99,10 @@ class KiTrader(KitbFreqaiBase):
         sig = rule_signals(dataframe)
         for c in sig.columns:
             dataframe[c] = sig[c]
+        # Vorher/Nachher-Test (23.10.2026): mit kitb.extra_features = false rechnet KI 1 wie vor dem 23.10. (ohne
+        # Methoden-Signale und ohne Internet-Daten/Formel-Faktoren). Im Betrieb immer an.
+        if not (getattr(self, "config", None) or {}).get("freqai", {}).get("kitb", {}).get("extra_features", True):
+            return dataframe
         for c, v in method_signals(dataframe).items():
             dataframe[c] = v
         # Was alle Trader tun + Gesamtmarkt/Stimmung (Burak 23.10.2026). Fehlende Werte neutral (0), sonst verwirft

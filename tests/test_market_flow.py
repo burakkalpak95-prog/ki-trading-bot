@@ -216,3 +216,28 @@ def test_alpha_ranks_from_daily_klines_without_lookahead(tmp_path):
     f = market_flow.alpha_features("C0/USDT", pd.Series([t]), ud)
     exp = a.set_index("date").loc[pd.Timestamp("2026-09-09", tz="UTC"), "alpha_x_high60"]
     assert f["alpha_x_high60"].iloc[0] == exp
+
+
+def test_alpha_history_merges_local_daily_candles(tmp_path, monkeypatch):
+    from kitb import paths
+    from kitb.data.storage import store_ohlcv
+
+    pairs = [f"C{i}/USDT" for i in range(8)]
+    rng = np.random.default_rng(7)
+    old_days = pd.date_range(T0 - pd.Timedelta(days=500), T0 - pd.Timedelta(days=151), freq="D")
+    api_days = pd.date_range(T0 - pd.Timedelta(days=150), T0, freq="D")
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "data")
+    for p in pairs:
+        c = 100 * np.exp(np.cumsum(rng.normal(0, 0.03, len(old_days))))
+        store_ohlcv(tmp_path / "data" / "binance", p, "1d", pd.DataFrame(
+            {"date": old_days, "open": c, "high": c * 1.02, "low": c * 0.97, "close": c, "volume": 1000.0}))
+
+    def get(url, params):
+        return [[_ms(d), "100", "102", "97", str(100 + i % 7), "1000", _ms(d + pd.Timedelta(days=1)) - 1]
+                for i, d in enumerate(api_days)]
+
+    ud = tmp_path / "ud"
+    market_flow.update_alphas(pairs, ud, get=get)
+    a = market_flow.load("C0/USDT", "alpha", ud)
+    assert a["date"].min() < T0 - pd.Timedelta(days=300)  # Verlauf reicht vor die 200 API-Tage zurück
+    assert a["date"].max() >= T0 - pd.Timedelta(days=2)

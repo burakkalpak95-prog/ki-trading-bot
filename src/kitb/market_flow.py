@@ -383,7 +383,16 @@ def update_alphas(pairs: list[str], user_data: Path | None = None, get: Callable
                            "close_time": pd.to_datetime([r[6] for r in rows], unit="ms", utc=True),
                            **{c: [float(r[i]) for r in rows] for c, i in
                               (("open", 1), ("high", 2), ("low", 3), ("close", 4), ("volume", 5))}})
-        frames[pair] = df[df["close_time"] < now].set_index("date")
+        df = df[df["close_time"] < now].set_index("date")
+        # Verlauf ab 2022 aus den geladenen Tageskerzen (die API liefert nur 200 Tage) – für Training und Backtests
+        try:
+            hist = alphas.load_panel([pair], paths.DATA_DIR / "binance")
+            if pair in hist["close"].columns:
+                old = pd.DataFrame({c: hist[c][pair] for c in ("open", "high", "low", "close", "volume")}).dropna()
+                df = pd.concat([old[old.index < df.index.min()], df]) if not df.empty else old
+        except Exception:  # noqa: BLE001 – ohne lokale Daten nur die 200 Tage der API
+            log.exception("Tageskerzen-Verlauf %s nicht lesbar", pair)
+        frames[pair] = df
     panel = {c: pd.DataFrame({p: f[c] for p, f in frames.items()}).sort_index()
              for c in ("open", "high", "low", "close", "volume")}
     return sum(_store(p, "alpha", df, user_data) for p, df in alphas.daily_ranks(panel).items())
