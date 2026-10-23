@@ -67,7 +67,12 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
         freqai["model_training_parameters"] = spec["model_training_parameters"]
         # Kennung je Merkmals-Satz und Zeitrahmen: nach einer Änderung (z. B. KI 1 1h -> 15m, 23.10.2026) werden alte
         # Modelle mit anderen Merkmalen nicht mehr geladen ("Pipeline expected ... but got ..."), sondern neu trainiert.
-        sig = json.dumps([spec.get("timeframe", "1h"), freqai["feature_parameters"]], sort_keys=True)
+        # Auch die Zusatzmerkmale aus dem Code (Internet-Daten) gehören zur Kennung, sonst lädt KI 1 nach einem Update
+        # alte Modelle mit weniger Merkmalen ("Pipeline expected", 23.10.2026 zweimal bis zum nächsten Neutraining).
+        from kitb import market_flow
+
+        sig = json.dumps([spec.get("timeframe", "1h"), freqai["feature_parameters"], market_flow.ALL_FEATURES],
+                         sort_keys=True)
         freqai["identifier"] = f"paper-learn-{bot}-{hashlib.sha1(sig.encode()).hexdigest()[:8]}"
         # Üben statt warten (Burak, 23.10.2026): niedrigere Einstiegsschwelle + Anteil Lern-Trades, nur Paper-Lernmodus.
         pl = {**project.get("paper_learning", {}), **spec.get("practice", {})}
