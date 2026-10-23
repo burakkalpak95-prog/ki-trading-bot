@@ -41,7 +41,7 @@ def fake_text(url, params):
 
 def _fill(ud):
     for pair in ("BTC/USDT",):
-        res = market_flow.update_all([pair], ud, get=fake_get)
+        res = market_flow.update_all([pair], ud, get=fake_get, get_bytes=lambda u: None)
         assert all(isinstance(v, int) for v in res[pair].values()), res
     assert all(isinstance(v, int) for v in market_flow.update_context(ud, get=fake_get, get_text=fake_text).values())
 
@@ -51,7 +51,7 @@ def test_collect_is_incremental_and_idempotent(tmp_path):
     _fill(ud)
     n = len(market_flow.load("BTC/USDT", "taker", ud))
     assert n > 100
-    again = market_flow.update_all(["BTC/USDT"], ud, get=fake_get)["BTC/USDT"]
+    again = market_flow.update_all(["BTC/USDT"], ud, get=fake_get, get_bytes=lambda u: None)["BTC/USDT"]
     assert again["taker"] == 0 and again["funding"] == 0 and again["ratio"] == 0
     assert len(market_flow.load("BTC/USDT", "taker", ud)) == n
     d = market_flow.load("BTC/USDT", "depth", ud)
@@ -147,3 +147,30 @@ def test_news_headlines_recorded_with_sentiment(tmp_path):
     assert market_flow.record_news("BTC/USDT", ud, get_text=lambda u, p: rss) == 0  # keine Doppel
     n = market_flow.load("BTC/USDT", "news", ud).set_index("source")["score"]
     assert n["X"] > 0 > n["Y"]
+
+
+def test_archive_backfill_maps_misleading_columns(tmp_path):
+    import io
+    import zipfile
+
+    rows = ["create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,"
+            "sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio"]
+    for m in (20, 0, 5, 10, 15):  # unsortiert wie im Archiv
+        rows.append(f"2026-09-01 00:{m:02d}:00,BTCUSDT,1,5000,9,2.5,1.5,1.1")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("BTCUSDT-metrics-2026-09-01.csv", "\n".join(rows))
+    calls = []
+
+    def fake_bytes(url):
+        calls.append(url)
+        return buf.getvalue() if url.endswith("2026-09-01.zip") else None
+
+    ud = tmp_path / "ud"
+    n = market_flow.backfill_ratios("BTC/USDT", ud, days=3, get_bytes=fake_bytes, today=pd.Timestamp("2026-09-03", tz="UTC"))
+    r = market_flow.load("BTC/USDT", "ratio", ud)
+    assert n == 2 and list(r["date"].dt.minute) == [0, 15]  # nur volle Viertelstunden, sortiert
+    assert r["ls_accounts"].iloc[0] == 1.5 and r["ls_top"].iloc[0] == 2.5 and r["oi_value"].iloc[0] == 5000
+    calls.clear()
+    market_flow.backfill_ratios("BTC/USDT", ud, days=3, get_bytes=fake_bytes, today=pd.Timestamp("2026-09-03", tz="UTC"))
+    assert not any(c.endswith("2026-09-01.zip") for c in calls)  # vorhandene Tage nicht erneut laden

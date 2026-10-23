@@ -3,8 +3,8 @@
 Quellen (öffentlich, kostenlos, ohne Konto/Keys, nur lesend):
 - Binance Spot, Kerzen inkl. aggressiver Käufe (taker buy volume) -> Kauf-/Verkaufsdruck. Verlauf ab 2022 nachladbar.
 - Binance USDT-Terminmarkt (nur als Information, gehandelt wird weiter nur Spot): Finanzierungsrate (Verlauf ab 2022),
-  Long/Short-Verhältnis aller Konten und der Top-Trader, offene Positionen. Unsicher: Binance liefert die Verhältnisse
-  nur für etwa die letzten 30 Tage, daher wird ab jetzt laufend mitgeschrieben.
+  Long/Short-Verhältnis aller Konten und der Top-Trader, offene Positionen. Die API liefert nur ~30 Tage; der Verlauf
+  davor kommt aus dem öffentlichen Binance-Archiv data.binance.vision (Tagesdateien, ab 2020/2021 je Coin).
 - Binance Spot Orderbuch: Ungleichgewicht der Kauf-/Verkaufsaufträge nahe am Kurs (nur Aufzeichnung, kein Verlauf).
 - Gesamtmarkt/Stimmung (für alle Coins gleich): Krypto-Fear-&-Greed-Index (alternative.me, ab 2018) und aus der
   Datenbank der US-Notenbank St. Louis (FRED, CSV ohne Key): VIX, Rendite 10-jähriger US-Anleihen, Dollar-Index, S&P 500,
@@ -175,6 +175,53 @@ def update_ratios(pair: str, user_data: Path | None = None, get: Callable = _get
     return _store(pair, "ratio", df, user_data)
 
 
+ARCHIVE_URL = "https://data.binance.vision/data/futures/um/daily/metrics"
+ARCHIVE_DAYS = 180  # reicht für das 90-Tage-Training von KI 1 mit Puffer (Tagesdateien, je Coin und Tag ein Abruf)
+
+
+def _get_bytes(url: str) -> bytes | None:
+    import requests
+
+    time.sleep(0.1)
+    r = requests.get(url, timeout=30)
+    if r.status_code == 404:  # Tag fehlt im Archiv (z. B. Coin damals noch nicht gelistet)
+        return None
+    r.raise_for_status()
+    return r.content
+
+
+def backfill_ratios(pair: str, user_data: Path | None = None, days: int = ARCHIVE_DAYS,
+                    get_bytes: Callable = _get_bytes, today: pd.Timestamp | None = None) -> int:
+    """Long/Short + offene Positionen rückwirkend aus dem öffentlichen Binance-Archiv (data.binance.vision).
+
+    Spalten im Archiv (Namen irreführend, geprüft 23.10.2026): count_long_short_ratio = alle Konten,
+    sum_toptrader_long_short_ratio = Top-Trader Positionen, sum_open_interest_value = offene Positionen in USDT.
+    5-Minuten-Raster, unsortiert, create_time UTC ohne Zeitzone; übernommen wird jede volle Viertelstunde (wie die API)."""
+    import io
+    import zipfile
+
+    today = (today or pd.Timestamp.now(tz="UTC")).normalize()
+    have = load(pair, "ratio", user_data)
+    known = set(pd.to_datetime(have["date"], utc=True).dt.normalize()) if not have.empty else set()
+    sym, added = symbol(pair), 0
+    for i in range(days, 0, -1):
+        day = today - pd.Timedelta(days=i)
+        if day in known:
+            continue
+        raw = get_bytes(f"{ARCHIVE_URL}/{sym}/{sym}-metrics-{day:%Y-%m-%d}.zip")
+        if not raw:
+            continue
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            df = pd.read_csv(z.open(z.namelist()[0]))
+        df["date"] = pd.to_datetime(df["create_time"], utc=True)
+        df = df[df["date"].dt.minute % 15 == 0].sort_values("date").drop_duplicates("date")
+        out = pd.DataFrame({"date": df["date"], "ls_accounts": df["count_long_short_ratio"].astype(float),
+                            "ls_top": df["sum_toptrader_long_short_ratio"].astype(float),
+                            "oi_value": df["sum_open_interest_value"].astype(float)})
+        added += _store(pair, "ratio", out, user_data)
+    return added
+
+
 def record_depth(pair: str, user_data: Path | None = None, get: Callable = _get, band: float = 0.01) -> int:
     """Orderbuch-Ungleichgewicht innerhalb ±1 % um die Mitte: +1 nur Kaufaufträge, -1 nur Verkaufsaufträge."""
     book = get(f"{SPOT}/api/v3/depth", {"symbol": symbol(pair), "limit": 500})
@@ -190,17 +237,19 @@ def record_depth(pair: str, user_data: Path | None = None, get: Callable = _get,
                                                "spread": [(asks[0, 0] - bids[0, 0]) / mid]}), user_data)
 
 
-def update_all(pairs: list[str], user_data: Path | None = None, get: Callable = _get, slow: bool = True) -> dict:
+def update_all(pairs: list[str], user_data: Path | None = None, get: Callable = _get, slow: bool = True,
+               get_bytes: Callable = _get_bytes) -> dict:
     """Ein Durchlauf für alle Coins. ``slow``: auch Finanzierungsrate und Verhältnisse (alle 5 Minuten reicht)."""
     out: dict[str, Any] = {}
     for pair in pairs:
         res = {}
         jobs = [("taker", update_taker), ("depth", record_depth)]
         if slow:
-            jobs += [("funding", update_funding), ("ratio", update_ratios)]
+            jobs += [("funding", update_funding), ("ratio", update_ratios), ("archive", backfill_ratios)]
         for name, fn in jobs:
             try:
-                res[name] = fn(pair, user_data, get=get)
+                res[name] = (fn(pair, user_data, get_bytes=get_bytes) if name == "archive"
+                             else fn(pair, user_data, get=get))
             except Exception as e:  # noqa: BLE001 – ein fehlender Markt (z. B. kein Terminkontrakt) stoppt nichts
                 res[name] = f"Fehler: {str(e)[:120]}"
         out[pair] = res
@@ -373,7 +422,8 @@ def features(pair: str, dates: pd.Series, minutes: int, user_data: Path | None =
         ra["flow_ls_accounts"] = np.log(ra["ls_accounts"].where(ra["ls_accounts"] > 0))
         ra["flow_ls_top"] = np.log(ra["ls_top"].where(ra["ls_top"] > 0))
         ra["flow_oi_change_4h"] = ra["oi_value"].pct_change(16, fill_method=None)
-        ready = pd.to_datetime(ra["date"], utc=True) + pd.Timedelta(minutes=15)  # Zeitstempel = Periodenbeginn (Unsicher)
+        # Zeitstempel = Messzeitpunkt/Periodenende (geprüft 23.10.2026); 5 Min. Puffer bis zur Veröffentlichung
+        ready = pd.to_datetime(ra["date"], utc=True) + pd.Timedelta(minutes=5)
         cols = ["flow_ls_accounts", "flow_ls_top", "flow_oi_change_4h"]
         out[cols] = asof(ra, ready, cols, pd.Timedelta(hours=2))
     return out.astype(float)
