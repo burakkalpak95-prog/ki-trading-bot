@@ -117,3 +117,9 @@ def test_experiments_try_many_methods_and_report_winner(home):
     assert isinstance(m["filter_active"], bool) and m["filter_active"]  # klares Muster -> Filter lohnt sich
     exp = ai_memory.latest_experiments()
     assert exp and exp["tried"] and exp["best"]["Variante"] in m["winner"]
+
+
+def test_memory_trains_every_few_hours():
+    nxt = ai_memory.next_training(pd.Timestamp("2026-10-23 05:00", tz="UTC"))
+    assert pd.Timestamp("2026-10-23 05:00", tz="UTC") < nxt <= pd.Timestamp("2026-10-24 00:30", tz="UTC")
+    assert nxt.minute == 30

@@ -250,7 +250,7 @@ def cmd_dashboard(args) -> int:
 
 
 def cmd_memory(args) -> int:
-    """KI-Gedächtnis: seed (einmalig historische Trades), daily (sammeln + lernen + prüfen), loop (täglich), status."""
+    """KI-Gedächtnis: seed (einmalig historische Trades), daily (sammeln + lernen + prüfen), loop (alle paar Stunden), status."""
     import time
 
     from kitb import ai_memory
@@ -275,9 +275,7 @@ def cmd_memory(args) -> int:
                 return 1
         if args.action == "daily":
             return 0
-        now = pd.Timestamp.now(tz="UTC")
-        next_run = now.normalize() + pd.Timedelta(days=1, minutes=30)  # kurz nach Tagesschluss
-        time.sleep(max(60.0, (next_run - now).total_seconds()))
+        time.sleep(max(60.0, (ai_memory.next_training() - pd.Timestamp.now(tz="UTC")).total_seconds()))
 
 
 def cmd_killswitch(args) -> int:

@@ -453,6 +453,19 @@ def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, regi
             "model_file": str(model_file), "experiments": exp}
 
 
+def next_training(now: Any = None) -> pd.Timestamp:
+    """Nächster Lernlauf: alle ``paper_learning.memory_every_hours`` Stunden (Standard 24), versetzt um 30 Min. nach
+    Kerzenschluss – so fließen neue Paper-Trades mehrmals täglich ein."""
+    from kitb.config import load_project_config
+
+    every = int(load_project_config().get("paper_learning", {}).get("memory_every_hours", 24))
+    now = pd.Timestamp.now(tz="UTC") if now is None else pd.Timestamp(now)
+    t = now.normalize() + pd.Timedelta(minutes=30)
+    while t <= now:
+        t += pd.Timedelta(hours=every)
+    return t
+
+
 def latest_experiments(user_data: Path | None = None) -> dict[str, Any] | None:
     """Ergebnis der jüngsten Experimentrunde (für die Übersicht), oder None."""
     p = memory_dir(user_data) / "experiments-latest.json"

@@ -186,9 +186,7 @@ def ai_activity() -> None:
 
     st.subheader("Was die KI gerade macht")
     exp = ai_memory.latest_experiments()
-    nxt = pd.Timestamp.now(tz="UTC").normalize() + pd.Timedelta(minutes=30)
-    if nxt <= pd.Timestamp.now(tz="UTC"):
-        nxt += pd.Timedelta(days=1)
+    nxt = ai_memory.next_training()
     st.write(f"Nächstes Training: **{nxt:%d.%m. %H:%M} UTC** (deutsche Sommerzeit +2 Std.)")
     if exp:
         best = exp.get("best") or {}

@@ -228,6 +228,7 @@
     "paper_learning": {
         "$comment": "Lernmodus der KI-Bots und Datensammler im Paper-Trading (Freigabe Burak, 22.10.2026). Nur virtuelles Kapital.",
         "retrain_hours": 24,
+        "memory_every_hours": 4,
         "refill_on_drawdown": true,
         "apply_ai_filter": true
     }
