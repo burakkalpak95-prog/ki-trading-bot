@@ -312,6 +312,8 @@
         "$comment": "Lernmodus der KI-Bots und Datensammler im Paper-Trading (Freigabe Burak, 22.10.2026). Nur virtuelles Kapital.",
         "retrain_hours": 4,
         "memory_every_hours": 1,
+        "$comment_slots": "Freigabe Burak 23.10.2026 (Entscheidungskarte): KIs im Paper-Lernmodus bis 6 gleichzeitige Positionen; Einsatz je Trade = Konto × Gesamteinsatz-Limit / 6. Kandidaten und Sammler bleiben bei risk.json.",
+        "max_open_positions_learning": 6,
         "$comment_practice": "KI-Bots üben im Paper-Lernmodus (Burak 23.10.2026): Einstieg ab 52 % statt 60 % plus ~15 % Übungstrades ab 45 % (Tag „lern: …“); ki_trader übt stärker (eigene practice-Werte).",
         "learning_entry_proba": 0.52,
         "explore_share": 0.15,

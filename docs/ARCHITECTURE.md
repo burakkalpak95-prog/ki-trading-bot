@@ -244,6 +244,8 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - **Ressourcen:** beide Modelle sind klassisches ML auf der CPU (LightGBM ~ Sekunden je Training, Bandit Millisekunden).
   Kein Sprachmodell, die Grafikkarte wird nicht benötigt (gemessen: RTX 5070 Ti Laptop 12 GB, im Container nutzbar –
   Reserve für einen späteren größeren Ansatz, z. B. kleines PPO-Netz). Unsicher: genaue RAM-Last aller Container zusammen.
-- **Sicherheit:** beide nur Paper (dry_run, eigenes Konto je KI mit 10.000 USDT, Runden bei Drawdown), alle Risikolimits je
-  KI unverändert (Tagesverlust 3 %, Position max. 40 %, max. 2 offene Positionen, Drawdown 15 %). Nur Long (Spot ohne
+- **Sicherheit:** beide nur Paper (dry_run, eigenes Konto je KI mit 10.000 USDT, Runden bei Drawdown), Risikolimits je
+  KI (Tagesverlust 3 %, Position max. 40 %, Gesamteinsatz 80 %, Drawdown 15 %). Ausnahme (Entscheidungskarte Burak,
+  23.10.2026): KIs im Paper-Lernmodus bis 6 gleichzeitige Positionen (`paper_learning.max_open_positions_learning`),
+  Einsatz je Trade = 10.000 × 80 % / 6; Kandidaten und Sammler bleiben bei 2. Nur Long (Spot ohne
   Hebel); Short würde Futures/Margin erfordern und ist laut Projektvorgaben gesperrt.

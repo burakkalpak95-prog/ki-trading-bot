@@ -94,6 +94,7 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
     pairs = project["allowed_pairs"]
     if learning:
         pairs = _use_learning_pairs(cfg, project)
+        _apply_learning_slots(cfg, project)
     problems = check_paper_config(cfg, project["allowed_exchanges"], pairs,
                                   str((user_data_dir or paths.USER_DATA).resolve() / "paper"))
     if problems:
@@ -101,6 +102,20 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
     path = d / "config.json"
     path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return path, cfg
+
+
+def _apply_learning_slots(cfg: dict[str, Any], project: dict[str, Any]) -> None:
+    """KIs im Paper-Lernmodus: mehr gleichzeitige Positionen (Freigabe Burak 23.10.2026: bis 6). Einsatz je Trade so
+    verkleinert, dass alle Positionen zusammen das Gesamteinsatz-Limit (max_total_exposure_fraction) einhalten."""
+    from kitb.risk import RiskLimits
+
+    n = int(project.get("paper_learning", {}).get("max_open_positions_learning", 0))
+    if n <= 0 or not cfg.get("dry_run"):
+        return
+    exposure = RiskLimits.load().max_total_exposure_fraction
+    cfg["max_open_trades"] = n
+    cfg["stake_amount"] = int(cfg["dry_run_wallet"] * exposure / n)
+    cfg["kitb_max_open_positions"] = n
 
 
 def _use_learning_pairs(cfg: dict[str, Any], project: dict[str, Any]) -> list[str]:
@@ -138,6 +153,8 @@ def _build_rule_config(paper_id: str, reg: Registry, project: dict[str, Any],
     pairs = project["allowed_pairs"]
     if cfg["kitb_mode"] in ("explore", "learning"):
         pairs = _use_learning_pairs(cfg, project)
+    if cfg["kitb_mode"] == "learning":
+        _apply_learning_slots(cfg, project)
     problems = check_paper_config(cfg, project["allowed_exchanges"], pairs,
                                   str((user_data_dir or paths.USER_DATA).resolve() / "paper"))
     if problems:

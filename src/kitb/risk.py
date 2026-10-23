@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import signal
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -202,7 +202,13 @@ class RiskManagedMixin:
             return False
         state = self._account_state(current_time)
         age, qv = self._market_checks(pair, current_time)
-        decision = self._rm().check_entry(pair=pair, stake=amount * rate, state=state,
+        rm = self._rm()
+        slots = self.config.get("kitb_max_open_positions")
+        if slots and self.config.get("dry_run") and self.config.get("kitb_mode") == "learning":
+            # Freigabe Burak (23.10.2026): KIs im Paper-Lernmodus bis zu `slots` gleichzeitige Positionen.
+            # Alle übrigen Limits (Tagesverlust, Positionsgröße, Gesamteinsatz, Drawdown) gelten unverändert.
+            rm = RiskManager(replace(rm.limits, max_open_positions=int(slots)))
+        decision = rm.check_entry(pair=pair, stake=amount * rate, state=state,
                                           kill_switch=killswitch.is_active(), data_age_candles=age,
                                           quote_volume_24h=qv, enforce_drawdown_halt=self._is_live_like())
         if self._is_live_like():
