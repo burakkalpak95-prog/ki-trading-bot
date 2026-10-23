@@ -120,8 +120,10 @@ def sync(user_data: Path | None = None) -> int:
                         else pd.Timestamp(r["open_date"])
                     closed = pd.Timestamp(r["close_date"], tz="UTC") if pd.Timestamp(r["close_date"]).tzinfo is None \
                         else pd.Timestamp(r["close_date"])
-                    s = snaps[(snaps["pair"] == r["pair"]) & ((snaps["when"] - opened).abs() <= pd.Timedelta(hours=2))]
-                    snap = s.iloc[(s["when"] - opened).abs().argsort()].iloc[0] if not s.empty else None
+                    snap = None
+                    if not snaps.empty:  # ohne Notizdatei (z. B. Trades vor dem Update) nur Ergebnis speichern
+                        s = snaps[(snaps["pair"] == r["pair"]) & ((snaps["when"] - opened).abs() <= pd.Timedelta(hours=2))]
+                        snap = s.iloc[(s["when"] - opened).abs().argsort()].iloc[0] if not s.empty else None
                     tag = str(r["enter_tag"] or "")
                     kind = (snap["kind"] if snap is not None else
                             ("learn" if tag.startswith(("lern", "ki_uebt")) else "signal"))

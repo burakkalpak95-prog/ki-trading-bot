@@ -142,3 +142,11 @@ def test_ki_reward_custom_exit_is_active():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod.KiReward.use_exit_signal is True  # sonst ruft Freqtrade custom_exit nie auf (Haltedauer)
+
+
+def test_sync_without_snapshot_file_keeps_result(ud):
+    _ft_db(ud / "paper" / "bot_b" / "tradesv3.dryrun.sqlite", [
+        (1, "BTC/USDT", 0, "2026-10-23 01:00:00", "2026-10-23 03:00:00", 100, 101, 1000, 0.008, 8, "ml_up", "x")])
+    assert shared_memory.sync(ud) == 1
+    mem = shared_memory.load(ud)
+    assert mem["ki"].tolist() == ["bot_b"] and mem["kind"].tolist() == ["signal"] and mem["rsi_14"].isna().all()
