@@ -249,3 +249,9 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
   23.10.2026): KIs im Paper-Lernmodus bis 6 gleichzeitige Positionen (`paper_learning.max_open_positions_learning`),
   Einsatz je Trade = 10.000 × 80 % / 6; Kandidaten und Sammler bleiben bei 2. Nur Long (Spot ohne
   Hebel); Short würde Futures/Margin erfordern und ist laut Projektvorgaben gesperrt.
+- **Mehr Lerndaten (Burak, 23.10.2026: „was am besten für die Lerndaten ist“):** 16 statt 8 Lern-Coins (zusätzlich
+  AVAX, DOT, LTC, TRX, NEAR, ATOM, BCH, UNI; trend_d1 bleibt BTC/ETH). KI 1 handelt auf 15-Minuten-Kerzen
+  (`bots.ki_trader.timeframe`, Merkmale 15m/1h/4h, Ziel: +0,6 % in 12 Kerzen = 3 h) und schließt Lern-Trades
+  spätestens nach 16 Kerzen (4 h). `max_hold_candles` zählt jetzt Kerzen des Bot-Zeitrahmens, die Lern-Trade-Ziehung
+  (`explore_draw`) läuft je Kerze. Unsicher: Binance-Abfragegrenzen und Trainingszeit bei 25 Bots × 16 Coins –
+  nach dem Start beobachten.

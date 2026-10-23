@@ -23,11 +23,11 @@ from kitb.risk import RiskManagedMixin
 log = logging.getLogger(__name__)
 
 
-def explore_draw(dates, pair: str):
+def explore_draw(dates, pair: str, minutes: int = 60):
     """Pseudozufall 0..999 je Kerze und Markt, gut durchmischt (kein Block über Tage) und reproduzierbar."""
-    hours = ((dates - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(hours=1)).astype("int64")
+    candle = ((dates - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(minutes=minutes)).astype("int64")
     salt = sum((i + 1) * ord(c) for i, c in enumerate(pair))
-    return ((hours * 2_654_435_761 + salt * 40_503) % 4_294_967_296) % 1000
+    return ((candle * 2_654_435_761 + salt * 40_503) % 4_294_967_296) % 1000
 
 
 class KitbFreqaiBase(RiskManagedMixin, IStrategy):
@@ -68,7 +68,9 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
         if explore > 0:
             # Nur Lernmodus im Paper-Trading (Burak, 23.10.2026): die KI geht gezielt auch Trades ohne Signal ein
             # (Lern-Trades), damit sie Negativdaten sammelt. Auswahl deterministisch je Kerze und Markt (nachvollziehbar).
-            h = explore_draw(df["date"], metadata.get("pair", ""))
+            from freqtrade.exchange import timeframe_to_minutes
+
+            h = explore_draw(df["date"], metadata.get("pair", ""), timeframe_to_minutes(self.timeframe))
             mask = ok & (df["up"] > k.get("explore_floor", 0.45)) & (h < explore * 1000)
             df.loc[mask, "enter_long"] = 1
             df.loc[mask, "enter_tag"] = "lern: ohne Signal, Modell " + (df.loc[mask, "up"] * 100).round().astype(int).astype(str) + " %"
@@ -85,7 +87,9 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
     def custom_exit(self, pair, trade, current_time, current_rate, current_profit, **kwargs):
         """Lernmodus: Übungstrades spätestens nach ``max_hold_candles`` schließen, damit Ergebnisse entstehen."""
         limit = self._kitb().get("max_hold_candles")
-        if limit and (current_time - trade.open_date_utc).total_seconds() >= limit * 3600:
+        from freqtrade.exchange import timeframe_to_seconds
+
+        if limit and (current_time - trade.open_date_utc).total_seconds() >= limit * timeframe_to_seconds(self.timeframe):
             return "lernhorizont"
         return None
 

@@ -109,7 +109,7 @@ def run_bot(bot: str, *, timerange: str, datadir: Path, data_source: str, offlin
     regimes = _regimes(datadir)
     res = run_isolated(
         export="signals",
-        strategies=[spec["strategy"]], timeframe="1h", timerange=timerange, datadir=datadir,
+        strategies=[spec["strategy"]], timeframe=spec.get("timeframe", "1h"), timerange=timerange, datadir=datadir,
         data_source=data_source, offline=offline, registry_path=registry_path, results_dir=results_dir,
         config_path=None, extra_config_files=[overlay],
         extra_argv=["--freqaimodel", spec["freqaimodel"],

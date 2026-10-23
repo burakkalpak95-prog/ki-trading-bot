@@ -85,7 +85,7 @@ def test_ki_reward_paper_config(tmp_path):
     strategy_approval.approve(reg, "ki_reward", by="Burak", reason="KI 2")
     _, cfg = paper.build_paper_config("ki_reward", reg, tmp_path / "ud")
     assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True and cfg["kitb_practice"]["explore_share"] > 0
-    assert len(cfg["exchange"]["pair_whitelist"]) == 8 and not cfg["exchange"].get("key")
+    assert len(cfg["exchange"]["pair_whitelist"]) == 16 and not cfg["exchange"].get("key")
 
 
 def test_fleet_approval_includes_both_ais(ud, capsys):
@@ -133,6 +133,10 @@ def test_explore_draw_is_well_mixed_per_pair():
         assert 0.33 < picked.mean() < 0.47
         runs = np.diff(np.flatnonzero(np.diff(np.r_[0, picked.astype(int), 0]) != 0))
         assert runs.max() < 20  # keine tagelangen Blöcke mit/ohne Lern-Trades
+    # 15-Minuten-Kerzen: jede Kerze eigene Ziehung (nicht 4 gleiche je Stunde)
+    q = pd.Series(pd.date_range("2026-01-01", periods=2000, freq="15min", tz="UTC"))
+    d = explore_draw(q, "BTC/USDT", 15).to_numpy()
+    assert (d[1:] != d[:-1]).mean() > 0.95
 
 
 def test_ki_reward_custom_exit_is_active():

@@ -21,13 +21,13 @@ DEFAULT_PARAMS = {
 }
 
 
-def generate_hourly(pair: str, start: str, end: str, seed: int) -> pd.DataFrame:
+def generate_hourly(pair: str, start: str, end: str, seed: int, minutes: int = 60) -> pd.DataFrame:
     params = DEFAULT_PARAMS[pair]
-    dates = pd.date_range(start=start, end=end, freq="1h", tz="UTC", inclusive="left")
+    dates = pd.date_range(start=start, end=end, freq=f"{minutes}min", tz="UTC", inclusive="left")
     n = len(dates)
     # Seed je Paar ableiten, damit Paare unabhängig, aber reproduzierbar sind.
     rng = np.random.default_rng([seed, sum(map(ord, pair))])
-    dt = 1 / (365 * 24)
+    dt = minutes / (365 * 24 * 60)
     sigma = params["annual_vol"] * np.sqrt(dt)
     mu = (params["annual_drift"] - 0.5 * params["annual_vol"] ** 2) * dt
     # Regimewechsel (ruhig/volatil), damit die Daten nicht völlig gleichförmig sind.
@@ -44,7 +44,7 @@ def generate_hourly(pair: str, start: str, end: str, seed: int) -> pd.DataFrame:
 
 
 def resample(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-    rule = {"4h": "4h", "1d": "1D"}[timeframe]
+    rule = {"1h": "1h", "4h": "4h", "1d": "1D"}[timeframe]
     out = (df.set_index("date")
              .resample(rule, label="left", closed="left")
              .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
@@ -64,9 +64,11 @@ def write_synthetic_dataset(datadir: Path, pairs: list[str], timeframes: list[st
     )
     written = {}
     for pair in pairs:
-        hourly = generate_hourly(pair, start, end, seed)
+        # Mit 15m: Basis 15-Minuten-Kerzen, größere Zeitrahmen daraus zusammengefasst (sonst wie bisher stündlich).
+        base_tf = "15m" if "15m" in timeframes else "1h"
+        base = generate_hourly(pair, start, end, seed, 15 if base_tf == "15m" else 60)
         for tf in timeframes:
-            df = hourly if tf == "1h" else resample(hourly, tf)
+            df = base if tf == base_tf else resample(base, tf)
             store_ohlcv(datadir, pair, tf, df)
             written[(pair, tf)] = len(df)
     return written

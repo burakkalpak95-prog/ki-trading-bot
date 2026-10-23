@@ -91,6 +91,8 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
         "kitb_mode": "learning" if learning else "approved_model",
         "kitb_strategy_approval_id": learning["id"] if learning else None,
     })
+    if learning and project["bots"][bot].get("timeframe"):
+        cfg["timeframe"] = project["bots"][bot]["timeframe"]  # z. B. KI 1 im 15-Minuten-Takt (Burak 23.10.2026)
     pairs = project["allowed_pairs"]
     if learning:
         pairs = _use_learning_pairs(cfg, project)

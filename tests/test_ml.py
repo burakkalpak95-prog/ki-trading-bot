@@ -54,7 +54,7 @@ def test_label_definition():
 def ml_env(tmp_path_factory):
     root = tmp_path_factory.mktemp("ml")
     data = root / "synthetic"
-    write_synthetic_dataset(data, ["BTC/USDT", "ETH/USDT"], ["1h", "1d"], "2022-01-01", "2023-07-01", seed=5)
+    write_synthetic_dataset(data, ["BTC/USDT", "ETH/USDT"], ["15m", "1h", "4h", "1d"], "2022-01-01", "2023-07-01", seed=5)
     ud = root / "user_data"
     ud.mkdir()
     return data, ud

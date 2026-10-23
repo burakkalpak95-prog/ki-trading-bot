@@ -274,8 +274,12 @@ def test_ki_trader_practices_in_learning_mode(reg, tmp_path):
     _, cfg = paper.build_paper_config("ki_trader", reg, tmp_path / "ud")
     k = cfg["freqai"]["kitb"]
     assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True
-    assert k["explore_share"] > 0 and k["max_hold_candles"] == 12 and k["entry_proba"] <= 0.5
-    assert len(cfg["exchange"]["pair_whitelist"]) == 8 and not cfg["exchange"].get("key")
+    assert k["explore_share"] > 0 and k["max_hold_candles"] == 16 and k["entry_proba"] <= 0.5
+    assert cfg["timeframe"] == "15m" and "15m" in cfg["freqai"]["feature_parameters"]["include_timeframes"]
+    assert len(cfg["exchange"]["pair_whitelist"]) == 16 and not cfg["exchange"].get("key")
+    # bot_a/bot_b bleiben stündlich
+    strategy_approval.approve(reg, "bot_a", by="Burak", reason="Lernmodus")
+    assert paper.build_paper_config("bot_a", reg, tmp_path / "ud")[1]["timeframe"] == "1h"
 
 
 def test_rule_signals_are_features_for_ki_trader():
