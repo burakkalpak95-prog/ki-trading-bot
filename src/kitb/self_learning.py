@@ -71,7 +71,7 @@ def _weights(t: pd.DataFrame) -> np.ndarray:
 
 
 def _design(df: pd.DataFrame, columns: list[str], fill: pd.Series | None = None) -> tuple[pd.DataFrame, pd.Series]:
-    x = df.reindex(columns=columns).astype(float)
+    x = df.reindex(columns=columns).astype(float).replace([np.inf, -np.inf], np.nan)
     fill = x.median() if fill is None else fill
     return x.fillna(fill).fillna(0.0), fill
 

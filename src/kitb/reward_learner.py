@@ -30,7 +30,7 @@ class RewardModel:
 
     def design(self, feats: dict[str, float] | pd.DataFrame) -> np.ndarray:
         x = (pd.DataFrame([feats]) if isinstance(feats, dict) else feats).reindex(columns=SNAPSHOT_FEATURES)
-        z = ((x.astype(float).to_numpy() - self.center) / self.scale)
+        z = ((x.astype(float).replace([np.inf, -np.inf], np.nan).to_numpy() - self.center) / self.scale)
         z = np.clip(np.nan_to_num(z, nan=0.0), -5, 5)
         return np.column_stack([np.ones(len(z)), z])
 
@@ -50,8 +50,20 @@ def arm_for_hold(hours: float) -> str:
     return min(ARMS, key=lambda a: abs(ARMS[a] - hours))
 
 
+def with_simulations(memory: pd.DataFrame, n: int = 20_000) -> pd.DataFrame:
+    """Gedächtnis + simulierte Krypto-Trades (kitb.simulate, Burak 24.10.: Simulationen immer verwerten), gewichtet."""
+    from kitb import simulate
+
+    sim = simulate.load()
+    if sim.empty:
+        return memory
+    sim = sim[sim.get("ki", "") != "simulation_aktie"].tail(n).assign(weight=simulate.weight())
+    mem = memory.assign(weight=1.0) if not memory.empty else memory
+    return pd.concat([sim, mem], ignore_index=True)
+
+
 def fit(memory: pd.DataFrame) -> RewardModel:
-    """Neu lernen aus allen abgeschlossenen Trades beider KIs (Belohnung = Gewinn nach Gebühren in %)."""
+    """Neu lernen aus allen abgeschlossenen Trades (Belohnung = Gewinn nach Gebühren in %). Spalte ``weight`` optional."""
     m = RewardModel()
     if memory is None or memory.empty:
         return m
@@ -60,22 +72,26 @@ def fit(memory: pd.DataFrame) -> RewardModel:
     m.n_trades = len(mem)
     if mem.empty:
         return m
-    f = mem[SNAPSHOT_FEATURES].astype(float)
+    f = mem[SNAPSHOT_FEATURES].astype(float).replace([np.inf, -np.inf], np.nan)
     m.center = f.median().fillna(0.0).to_numpy()
     iqr = (f.quantile(0.75) - f.quantile(0.25)).replace(0, np.nan).fillna(1.0).to_numpy()
     m.scale = np.where(np.isfinite(iqr) & (iqr > 0), iqr, 1.0)
-    mem["arm"] = [a if a in ARMS else arm_for_hold(h) for a, h in zip(mem.get("action", ""), mem["hold_hours"])]
+    mem["arm"] = [a if a in ARMS else arm_for_hold(h) for a, h in zip(mem["action"] if "action" in mem else [None] * len(mem), mem["hold_hours"])]
     for arm in ARMS:
         part = mem[mem["arm"] == arm]
         if part.empty:
             continue
         x = m.design(part[SNAPSHOT_FEATURES])
         y = part["profit_pct"].astype(float).to_numpy() * 100
-        prec = PRIOR_PRECISION * np.eye(x.shape[1]) + x.T @ x
+        # Gewichte (simulierte Trades zählen weniger als echte): gewichtete kleinste Quadrate über √w
+        w = part["weight"].astype(float).to_numpy() if "weight" in part else np.ones(len(y))
+        sw = np.sqrt(w)[:, None]
+        xw, yw = x * sw, y * sw[:, 0]
+        prec = PRIOR_PRECISION * np.eye(x.shape[1]) + xw.T @ xw
         cov_unscaled = np.linalg.inv(prec)
-        mean = cov_unscaled @ x.T @ y
-        resid = y - x @ mean
-        noise = max(MIN_NOISE, float(resid @ resid) / max(1, len(y) - 1))
+        mean = cov_unscaled @ xw.T @ yw
+        resid = yw - xw @ mean
+        noise = max(MIN_NOISE, float(resid @ resid) / max(1.0, float(w.sum()) - 1))
         m.arms[arm] = {"mean": mean, "cov": cov_unscaled * noise, "noise": noise, "n": len(y)}
     return m
 

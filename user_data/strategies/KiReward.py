@@ -10,6 +10,7 @@ import logging
 import re
 
 import numpy as np
+import pandas as pd
 from pandas import DataFrame
 
 from freqtrade.strategy import IStrategy
@@ -40,9 +41,11 @@ class KiReward(RiskManagedMixin, IStrategy):
         """Neu lernen, sobald sich das gemeinsame Gedächtnis geändert hat (Bayes-Update dauert Millisekunden)."""
         p = shared_memory.db_path()
         stamp = p.stat().st_mtime if p.exists() else None
+        # + Simulationen (höchstens alle 15 Min. neu übernommen, die Endlos-Simulation schreibt laufend)
+        stamp = (stamp, pd.Timestamp.now(tz="UTC").floor("15min"))
         if self._model is None or stamp != self._model_stamp:
             try:
-                self._model = reward_learner.fit(shared_memory.load())
+                self._model = reward_learner.fit(reward_learner.with_simulations(shared_memory.load()))
                 log.info("KI 2 hat neu gelernt: %s Trades im gemeinsamen Gedächtnis", self._model.n_trades)
             except Exception:  # noqa: BLE001 – Lernfehler darf Handel/Ausstiege nicht blockieren: altes Modell behalten
                 log.exception("KI 2: Neu-Lernen fehlgeschlagen, nutze bisheriges Modell")

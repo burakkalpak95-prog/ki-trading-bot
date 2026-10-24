@@ -94,3 +94,15 @@ def test_self_play_rounds_learn_and_grow_memory(tmp_path, monkeypatch):
     assert mem.loc[mem["round"] == 3, "reason"].str.contains("runde 3").all()
     st = __import__("json").loads((d / "sim_status.json").read_text(encoding="utf-8"))
     assert st["runden"] == 3 and st["sim_trades_gespielt_gesamt"] > 0 and st["im_gedaechtnis"] == len(mem)
+
+
+def test_ki2_learns_from_weighted_simulations(tmp_path, monkeypatch):
+    from kitb import reward_learner
+
+    sim = simulate.simulate_pair(_candles(900), "ZZZ/USDT", 0.0034, np.random.default_rng(1), tmp_path)
+    monkeypatch.setattr(simulate, "load", lambda user_data=None, n=0: sim)
+    monkeypatch.setattr(simulate, "weight", lambda user_data=None: 0.2)
+    mem = reward_learner.with_simulations(pd.DataFrame())
+    assert len(mem) == len(sim) and (mem["weight"] == 0.2).all()
+    m = reward_learner.fit(mem)
+    assert m.n_trades == len(sim) and set(m.arms) <= set(reward_learner.ARMS) and m.arms

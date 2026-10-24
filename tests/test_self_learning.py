@@ -105,3 +105,15 @@ def test_threshold_is_base_rate_so_filter_does_not_block_everything(monkeypatch)
     assert 0.15 < s["threshold"] < 0.4
     allowed = [sl.win_chance("bot_b", {"rsi_14": v})[0] for v in np.linspace(-2, 2, 21)]
     assert any(allowed) and not all(allowed) if s["active"] else all(allowed)
+
+
+def test_design_tolerates_infinity():
+    """ai-simulation stürzte 24.10. ab: flow_oi_change_4h war ±inf (OI 0). inf muss wie fehlend behandelt werden."""
+    import numpy as np
+    import pandas as pd
+
+    from kitb import self_learning
+
+    df = pd.DataFrame({"a": [1.0, np.inf, -np.inf, 2.0]})
+    x, _ = self_learning._design(df, ["a"])
+    assert np.isfinite(x.to_numpy()).all()

@@ -67,7 +67,7 @@ def market_snapshot(df: pd.DataFrame, minutes_per_candle: int, pair: str | None 
         extra = market_flow.all_features(pair, df["date"], minutes_per_candle, user_data)
         extra.index = out.index
         out = pd.concat([out, extra], axis=1)
-    return out
+    return out.replace([np.inf, -np.inf], np.nan)  # z. B. OI-Änderung bei OI 0 -> ±inf; Modelle vertragen nur NaN
 
 
 def snapshot(ki: str, *, pair: str, when: Any, kind: str, reason: str, features: dict[str, float],
