@@ -19,6 +19,8 @@ from multiprocessing import get_context
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from kitb import paths
 from kitb.config import load_json, load_project_config
 from kitb.registry import Registry
@@ -65,6 +67,20 @@ def _count_trainings(user_data_dir: Path, identifier: str) -> int:
     return len(list(d.glob("sub-train-*"))) if d.exists() else 0
 
 
+def trade_summary(trades: list[dict]) -> dict[str, Any]:
+    """Warum gewinnt/verliert ein Bot? Ausstiegsgründe mit Anzahl und Ø-Ergebnis, Ø-Haltedauer."""
+    if not trades:
+        return {}
+    df = pd.DataFrame(trades)
+    out: dict[str, Any] = {"avg_profit": float(df["profit_ratio"].mean()),
+                           "avg_minutes": float(df.get("trade_duration", pd.Series(dtype=float)).mean())}
+    if "exit_reason" in df:
+        g = df.groupby("exit_reason")["profit_ratio"]
+        out["exit_reasons"] = {k: {"n": int(n), "avg_profit": float(m)}
+                               for k, n, m in zip(g.size().index, g.size(), g.mean())}
+    return out
+
+
 def _worker(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Läuft im Kindprozess (spawn): ein Freqtrade-Backtest + Ressourcenmessung."""
     from kitb.backtest import run_freqtrade_backtest
@@ -82,6 +98,7 @@ def _worker(kwargs: dict[str, Any]) -> dict[str, Any]:
     }
     for name, s in res["strategies"].items():
         trades = s.pop("trades", [])
+        s["trade_summary"] = trade_summary(trades)
         if decisions_spec:
             from kitb.decisions import build_decisions, load_signals
 

@@ -334,6 +334,17 @@ def cmd_feature_ab(args) -> int:
     return 0
 
 
+def cmd_ki1_sweep(args) -> int:
+    """Warum verliert KI 1? Backtests mit je einer geänderten Stellschraube (Zeitrahmen, Kursziel, Schwelle)."""
+    from kitb import feature_ab
+
+    res = feature_ab.sweep(datadir=paths.DATA_DIR / args.source, data_source=args.source, timerange=args.timerange,
+                           only=args.only or None)
+    print(Path(res["report"]).read_text(encoding="utf-8"))
+    _print(res)
+    return 0
+
+
 def cmd_news_test(args) -> int:
     """Schlagzeilen-Test: Wortliste vs. lokales Sprachmodell (Ollama) – sagt die Bewertung die Kurse danach voraus?"""
     from kitb import news_test
@@ -579,6 +590,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--source", default="binance")
     s.add_argument("--timerange", default="20240101-20251104")
     s.set_defaults(func=cmd_feature_ab)
+
+    s = sub.add_parser("ki1-sweep", help="Warum verliert KI 1? Varianten für Zeitrahmen/Kursziel/Schwelle (Backtests)")
+    s.add_argument("--source", default="binance")
+    s.add_argument("--timerange", default="20240101-20251104")
+    s.add_argument("--only", nargs="*")
+    s.set_defaults(func=cmd_ki1_sweep)
 
     s = sub.add_parser("news-test", help="Schlagzeilen-Test: Wortliste vs. lokales Sprachmodell (nur Historie)")
     s.add_argument("headlines", help="Datei oder Ordner mit Schlagzeilen (CSV/Parquet/JSONL mit Zeitstempel + Titel)")

@@ -24,3 +24,24 @@ def test_verdict_and_render():
     assert "schlechter" in feature_ab.verdict(_r(100, 0.0), _r(100, 0.10))
     md = feature_ab.render(_r(100, 0.2), _r(90, 0.1), "20240101-20251104", ["BTC/USDT"])
     assert "| Trades | 100 | 90 |" in md and "20.00%" in md
+
+
+def test_sweep_overlay_and_render(tmp_path):
+    v = feature_ab.SWEEP["1h_ziel_3pct_24h"]
+    cfg = json.loads(feature_ab._overlay(tmp_path, "s", True, v).read_text(encoding="utf-8"))["freqai"]
+    assert cfg["kitb"]["label_threshold"] == 0.03 and cfg["kitb"]["entry_proba"] == 0.65
+    assert cfg["feature_parameters"]["label_period_candles"] == 24
+    assert cfg["feature_parameters"]["include_timeframes"] == ["1h", "4h", "1d"]
+    r = _r(100, -0.1)
+    r["trades"] = {"avg_profit": -0.002, "exit_reasons": {"stop_loss": {"n": 40, "avg_profit": -0.06},
+                                                          "exit_signal": {"n": 60, "avg_profit": 0.01}}}
+    md = feature_ab.render_sweep({"heute_15m": r}, "20240101-20251104")
+    assert "| heute_15m | 100 |" in md and "40%" in md and "stop_loss 40×" in md
+
+
+def test_trade_summary():
+    from kitb.ml import trade_summary
+
+    s = trade_summary([{"profit_ratio": 0.02, "exit_reason": "roi", "trade_duration": 60},
+                       {"profit_ratio": -0.06, "exit_reason": "stop_loss", "trade_duration": 30}])
+    assert abs(s["avg_profit"] + 0.02) < 1e-9 and s["exit_reasons"]["stop_loss"]["n"] == 1 and trade_summary([]) == {}
