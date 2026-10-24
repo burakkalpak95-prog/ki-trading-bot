@@ -106,6 +106,74 @@ def _bot_dbs(ki: str, user_data: Path | None) -> list[tuple[str, Path]]:
     return [(r, db) for r, db in dbs if db.exists()]
 
 
+def _all_bots() -> list[str]:
+    """Alle Paper-Bots: die KIs UND die Regel-Bots (Burak 24.10.2026: KIs lernen aus Daten aus allen Richtungen)."""
+    try:
+        from kitb import paper
+
+        return list(dict.fromkeys([*KIS, *paper.paper_ids()]))
+    except Exception:  # noqa: BLE001 – ohne Projektkonfiguration nur die KIs
+        return list(KIS)
+
+
+def _ensure_columns(con) -> None:
+    cols = {r[1] for r in con.execute("PRAGMA table_info(trades)")}
+    if "features_1h" not in cols:
+        con.execute("ALTER TABLE trades ADD COLUMN features_1h TEXT")
+
+
+_KLINES: dict[str, tuple[pd.Timestamp, pd.DataFrame]] = {}
+
+
+def _klines_1h(pair: str, get) -> pd.DataFrame:
+    """Binance-Stundenkerzen (öffentlich, ~41 Tage), je Coin höchstens einmal pro Stunde geladen."""
+    now = pd.Timestamp.now(tz="UTC")
+    hit = _KLINES.get(pair)
+    if hit and now - hit[0] < pd.Timedelta(hours=1):
+        return hit[1]
+    rows = get(f"{market_flow.SPOT}/api/v3/klines", {"symbol": market_flow.symbol(pair), "interval": "1h", "limit": 1000})
+    df = pd.DataFrame({"date": pd.to_datetime([r[0] for r in rows], unit="ms", utc=True),
+                       **{c: [float(r[i]) for r in rows] for c, i in
+                          (("open", 1), ("high", 2), ("low", 3), ("close", 4), ("volume", 5))}})
+    _KLINES[pair] = (now, df)
+    return df
+
+
+def fill_features(user_data: Path | None = None, get=None) -> int:
+    """Marktlage beim Einstieg für Trades ohne Einstiegsnotiz (Regel-Bots, ältere KI-Trades) nachtragen.
+
+    Gleiche Merkmale wie die Notizen der KIs, aus der letzten ABGESCHLOSSENEN Stundenkerze vor dem Einstieg (kein Blick
+    in die Zukunft). Liegt der Einstieg vor den verfügbaren Kerzen, wird „{}“ gespeichert (nicht erneut versuchen)."""
+    get = get or market_flow._get
+    p = db_path(user_data)
+    if not p.exists():
+        return 0
+    done = 0
+    with closing(sqlite3.connect(p, timeout=30)) as con:
+        con.execute("PRAGMA busy_timeout = 30000")
+        _ensure_columns(con)
+        todo = pd.read_sql_query("SELECT ki, round, trade_id, pair, open_date FROM trades "
+                                 "WHERE features IS NULL AND features_1h IS NULL", con)
+        for pair, part in todo.groupby("pair"):
+            try:
+                k = _klines_1h(pair, get)
+                snap = market_snapshot(k, 60, pair, user_data)
+                snap.index = k["date"] + pd.Timedelta(hours=1)  # Wert erst nach Kerzenschluss bekannt
+            except Exception:  # noqa: BLE001 – nächster Lauf versucht es erneut
+                continue
+            for r in part.itertuples():
+                opened = pd.Timestamp(r.open_date)
+                opened = opened.tz_localize("UTC") if opened.tzinfo is None else opened
+                pos = snap.index.searchsorted(opened, side="right") - 1
+                feats = {} if pos < 200 else {c: (None if not np.isfinite(v) else float(v))
+                                              for c, v in snap.iloc[pos].items()}
+                con.execute("UPDATE trades SET features_1h = ? WHERE ki = ? AND round = ? AND trade_id = ?",
+                            (json.dumps(feats), r.ki, r.round, r.trade_id))
+                done += 1
+        con.commit()
+    return done
+
+
 def sync(user_data: Path | None = None) -> int:
     """Einziger Schreiber: abgeschlossene Trades beider KIs + Einstiegsnotizen -> shared.sqlite. Gibt neue Zeilen zurück."""
     out = db_path(user_data)
@@ -114,7 +182,8 @@ def sync(user_data: Path | None = None) -> int:
     with closing(sqlite3.connect(out, timeout=30)) as con:
         con.execute("PRAGMA busy_timeout = 30000")
         con.execute(_SCHEMA)
-        for ki in KIS:
+        _ensure_columns(con)
+        for ki in _all_bots():
             snaps = _snapshots(ki, user_data)
             for rnd, db in _bot_dbs(ki, user_data):
                 try:
@@ -137,7 +206,9 @@ def sync(user_data: Path | None = None) -> int:
                     kind = (snap["kind"] if snap is not None else
                             ("learn" if tag.startswith(("lern", "ki_uebt")) else "signal"))
                     cur = con.execute(
-                        "INSERT OR IGNORE INTO trades VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT OR IGNORE INTO trades (ki, round, trade_id, kind, pair, timeframe, open_date, close_date, open_rate, "
+                        "close_rate, stake_amount, profit_pct, profit_abs, hold_hours, reason, action, features, exit_reason) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (ki, rnd, int(r["id"]), kind, r["pair"], snap["timeframe"] if snap is not None else "",
                          opened.isoformat(), closed.isoformat(), float(r["open_rate"]), float(r["close_rate"] or 0),
                          float(r["stake_amount"]), float(r["close_profit"] or 0), float(r["close_profit_abs"] or 0),
@@ -161,5 +232,9 @@ def load(user_data: Path | None = None) -> pd.DataFrame:
         return pd.DataFrame()
     if df.empty:
         return df
-    feats = pd.DataFrame([json.loads(f) if isinstance(f, str) and f else {} for f in df["features"]], index=df.index)
-    return pd.concat([df.drop(columns=["features"]), feats.reindex(columns=SNAPSHOT_FEATURES)], axis=1)
+    alt = df["features_1h"] if "features_1h" in df else pd.Series(None, index=df.index)
+    feats = pd.DataFrame([json.loads(f) if isinstance(f, str) and f else
+                          (json.loads(a) if isinstance(a, str) and a else {}) for f, a in zip(df["features"], alt)],
+                         index=df.index)
+    return pd.concat([df.drop(columns=[c for c in ("features", "features_1h") if c in df]),
+                      feats.reindex(columns=SNAPSHOT_FEATURES)], axis=1)

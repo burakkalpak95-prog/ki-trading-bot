@@ -285,6 +285,9 @@ def cmd_memory(args) -> int:
                 n = shared_memory.sync()
                 if n:
                     print(f"Gemeinsames Gedächtnis: {n} neue Trades")
+                f = shared_memory.fill_features()
+                if f:
+                    print(f"Gemeinsames Gedächtnis: Marktlage für {f} Trades nachgetragen")
             except Exception as e:  # noqa: BLE001
                 print(f"Gemeinsames Gedächtnis: Fehler {e}", file=sys.stderr)
             time.sleep(60.0)

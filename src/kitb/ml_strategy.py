@@ -77,20 +77,43 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
         sig = ok & (df["up"] > k["entry_proba"])
         df.loc[sig, "enter_long"] = 1
         df.loc[sig, "enter_tag"] = "signal: Modell " + (df.loc[sig, "up"] * 100).round().astype(int).astype(str) + " %"
+        if k.get("self_learning") and self._is_live_like() and len(df) and df["enter_long"].iloc[-1] == 1:
+            # Selbst lernen (Burak 24.10.2026): Haltedauer nach den eigenen Ergebnissen wählen, steht im Einstiegsgrund
+            try:
+                from kitb import self_learning
+
+                from freqtrade.exchange import timeframe_to_minutes
+
+                n = self_learning.hold_for(self.config.get("bot_name", ""), self._hold_options(),
+                                           metadata.get("pair", ""), df["date"].iloc[-1],
+                                           timeframe_to_minutes(self.timeframe))
+                df.loc[df.index[-1], "enter_tag"] = f"{df['enter_tag'].iloc[-1]} · halten:{n}"
+            except Exception:  # noqa: BLE001 – ohne Wahl gilt die feste Haltedauer
+                log.exception("Haltedauer konnte nicht gewählt werden")
         return df
 
+    def _hold_options(self) -> list[int]:
+        return [int(x) for x in self._kitb().get("hold_options", [4, 8, 16, 32])]
+
     def populate_exit_trend(self, df: DataFrame, metadata: dict) -> DataFrame:
+        if self._kitb().get("self_learning") and self._is_live_like():
+            # Selbst lernen: kein Sofort-Ausstieg bei leichter Unsicherheit (Paper 24.10.: 111 von 125 Trades endeten so
+            # nach Ø 1,5 h mit kleinem Minus); Ausstieg über die gelernte Haltedauer oder den Stoploss.
+            return df
         df.loc[(df["up"] < self._kitb()["exit_proba"]) & (df["volume"] > 0),
                ["exit_long", "exit_tag"]] = (1, "ml_weak")
         return df
 
     def custom_exit(self, pair, trade, current_time, current_rate, current_profit, **kwargs):
         """Lernmodus: Übungstrades spätestens nach ``max_hold_candles`` schließen, damit Ergebnisse entstehen."""
-        limit = self._kitb().get("max_hold_candles")
         from freqtrade.exchange import timeframe_to_seconds
 
+        from kitb.self_learning import hold_from_tag
+
+        chosen = hold_from_tag(trade.enter_tag)
+        limit = chosen or self._kitb().get("max_hold_candles")
         if limit and (current_time - trade.open_date_utc).total_seconds() >= limit * timeframe_to_seconds(self.timeframe):
-            return "lernhorizont"
+            return f"halten {chosen}" if chosen else "lernhorizont"
         return None
 
     # --- Entscheidungsprotokoll im Paper-Trading (im Backtest übernimmt das kitb.decisions) ---
@@ -116,6 +139,23 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
                          "erlaubt" if allowed else "ausgelassen")
             except Exception as e:  # noqa: BLE001
                 log.warning("KI-Gedächtnis nicht verfügbar (%s)", e)
+                allowed = True
+        if (allowed and self._is_live_like() and self._kitb().get("self_learning")
+                and str(entry_tag or "").startswith("signal")):
+            # Selbst lernen (Burak 24.10.2026): Signal-Trades prüft das Modell aus den EIGENEN Trade-Ergebnissen (nach
+            # Gebühren). Es filtert erst, wenn es auf ungesehenen Trades besser war. Lern-Trades bleiben ungefiltert.
+            try:
+                from freqtrade.exchange import timeframe_to_minutes
+
+                from kitb import self_learning, shared_memory
+
+                df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+                snap = shared_memory.market_snapshot(df, timeframe_to_minutes(self.timeframe), pair).iloc[-1]
+                allowed, p, why = self_learning.win_chance(self.config.get("bot_name", ""), snap.to_dict())
+                log.info("Eigene Erfahrung %s: Gewinnchance %s -> %s (%s)", pair, "?" if p is None else f"{p:.0%}",
+                         "erlaubt" if allowed else "ausgelassen", why)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Eigene Erfahrung nicht verfügbar (%s)", e)
                 allowed = True
         from kitb.shared_memory import KIS
 

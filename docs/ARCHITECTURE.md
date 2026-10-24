@@ -320,3 +320,15 @@ gekennzeichnet ist (`SYNTHETIC_DATA_README.txt`) – sonst Abbruch.
 - **Ergebnis Schlagzeilen-Test (23.10.2026, 23.301 Schlagzeilen, qwen2.5:7b über Ollama):** Weder Wortliste noch
   Sprachmodell sagen die Rendite nach 1 h/4 h/24 h voraus (alle |t| < 1,7, Vorzeichen früh/spät uneinheitlich).
   Entscheidung: kein dauerhaftes Sprachmodell; Schlagzeilen bleiben nur Aufzeichnung (kein Merkmal).
+
+## ADR-020: KIs lernen selbst aus allen Trades, keine festen Handelsregeln (24.10.2026)
+
+Burak: „die KI soll natürlich selber lernen … sie sollen keine festen Vorgaben haben, dafür haben wir die Bots“.
+- Das gemeinsame Gedächtnis (`shared.sqlite`) nimmt jetzt die abgeschlossenen Trades ALLER Paper-Bots auf, also auch der Regel-Bots. Trades ohne Einstiegsnotiz bekommen die Marktlage aus der letzten abgeschlossenen Binance-Stundenkerze vor dem Einstieg (`shared_memory.fill_features`, einziger Schreiber `ai-memory`).
+- `kitb.self_learning` (KI 1, Bot A, Bot B im Paper-Lernmodus):
+  - Ein Gewinnchance-Modell, angepasst sobald ein neuer Trade im Gedächtnis steht; eigene Trades zählen dreifach. Es filtert Signal-Trades erst, wenn es auf den jüngsten ungesehenen Trades besser war als alle nehmen.
+  - Die Haltedauer wird per Thompson-Sampling nach den Ergebnissen gewählt und steht im Einstiegsgrund („halten:N“).
+  - Der feste Sofort-Ausstieg „ml_weak“ entfällt.
+- KI 2 lernt damit ebenfalls aus allen Bot-Trades.
+- Fest bleiben nur die Sicherheitsgrenzen: Stoploss, Tagesverlust, Positionsgröße und Drawdown.
+- Unsicher: Die nachgetragene Marktlage stammt aus 1h-Kerzen, die Notizen der KIs aus ihrem eigenen Zeitrahmen. Die Werte sind ähnlich, aber nicht identisch.

@@ -86,6 +86,9 @@ def build_paper_config(bot: str, reg: Registry, user_data_dir: Path | None = Non
         if pl.get("max_hold_candles"):
             kitb["max_hold_candles"] = pl["max_hold_candles"]
         kitb["memory_gate_signals"] = bool(pl.get("memory_gate_signals"))
+        # Burak 24.10.2026: jede KI lernt aus ihren eigenen Trade-Ergebnissen (Einstieg + Haltedauer)
+        kitb["self_learning"] = bool(pl.get("self_learning", True))
+        kitb["hold_options"] = pl.get("hold_options", [4, 8, 16, 32])
     d = paper_dir(bot, user_data_dir)
     d.mkdir(parents=True, exist_ok=True)
     cfg = load_freqtrade_config()
