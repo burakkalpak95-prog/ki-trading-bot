@@ -32,7 +32,15 @@ _cache: dict[tuple, Any] = {}
 
 
 OWN_WEIGHT = 3.0
-SIM_WEIGHT = 0.2  # simulierte Trades (kitb.simulate) zählen ein Fünftel eines echten Trades
+# Simulationen (kitb.simulate) zählen ZUSAMMEN so viel wie SIM_SHARE × alle echten Trades zusammen. Ein festes Gewicht je
+# Sim-Trade ließ 60.000 Simulationen ~400 echte Trades übertönen (24.10.: AUC auf echten Trades 0,76 ohne -> 0,56 mit).
+SIM_SHARE = 0.5
+REAL_FLOOR = 100  # bei wenigen echten Trades zählen Simulationen wie gegenüber 100 echten
+
+
+def sim_per_trade(real_weight: float, n_sim: int, share: float | None = None) -> float:
+    """Gewicht EINES simulierten Trades, so dass alle Simulationen zusammen ``share`` × echtes Gesamtgewicht ergeben."""
+    return (SIM_SHARE if share is None else share) * max(float(real_weight), REAL_FLOOR) / max(n_sim, 1)
 
 
 def own_trades(ki: str, user_data: Path | None = None) -> pd.DataFrame:
@@ -47,18 +55,19 @@ def own_trades(ki: str, user_data: Path | None = None) -> pd.DataFrame:
 
 
 def _fit(x: pd.DataFrame, y: np.ndarray, own: np.ndarray | None = None, sim: np.ndarray | None = None,
-         sim_weight: float | None = None):
+         sim_share: float | None = None):
     """Gewichte: jüngere echte Trades zählen mehr (Halbwertszeit in Trades), eigene dreifach, Simulationen wenig."""
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
 
     sim = np.zeros(len(y), bool) if sim is None else np.asarray(sim, bool)
-    w = np.full(len(y), SIM_WEIGHT if sim_weight is None else sim_weight)
+    w = np.zeros(len(y))
     n_real = int((~sim).sum())
     w[~sim] = 0.5 ** ((n_real - 1 - np.arange(n_real)) / HALF_LIFE)
     if own is not None:
         w = w * np.where(own, OWN_WEIGHT, 1.0)
+    w[sim] = sim_per_trade(w[~sim].sum(), int(sim.sum()), sim_share)
     m = make_pipeline(StandardScaler(), LogisticRegression(C=0.3, max_iter=500))
     m.fit(x, y, logisticregression__sample_weight=w)
     return m
@@ -67,7 +76,9 @@ def _fit(x: pd.DataFrame, y: np.ndarray, own: np.ndarray | None = None, sim: np.
 def _weights(t: pd.DataFrame) -> np.ndarray:
     own = t["own"].fillna(False).to_numpy(bool) if "own" in t else np.zeros(len(t), bool)
     sim = (t["kind"] == "sim").to_numpy(bool) if "kind" in t else np.zeros(len(t), bool)
-    return np.where(own, OWN_WEIGHT, np.where(sim, SIM_WEIGHT, 1.0))
+    w = np.where(own, OWN_WEIGHT, 1.0)
+    w[sim] = sim_per_trade(w[~sim].sum(), int(sim.sum()))
+    return w
 
 
 def _design(df: pd.DataFrame, columns: list[str], fill: pd.Series | None = None) -> tuple[pd.DataFrame, pd.Series]:
@@ -145,8 +156,8 @@ def state(ki: str, user_data: Path | None = None) -> dict[str, Any]:
     t = own_trades(ki, user_data)
     from kitb import simulate
 
-    global SIM_WEIGHT
-    SIM_WEIGHT = simulate.weight(user_data)  # Simulationen zählen immer mit, das Gewicht wählt der Vergleich
+    global SIM_SHARE
+    SIM_SHARE = simulate.weight(user_data)  # Simulationen zählen immer mit, den Anteil wählt der Vergleich
     # Alle bereits abgeschlossenen Simulationen, auch der letzten Tage: damit lernt die KI auch, wie ihre AUSGELASSENEN
     # Signale ausgegangen wären (jede Stunde und jeder Coin wird simuliert, nicht nur die genommenen Trades)
     sim = _sims(user_data)

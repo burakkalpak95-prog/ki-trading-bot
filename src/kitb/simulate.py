@@ -336,8 +336,10 @@ def loop(user_data: Path | None = None, rounds: int | None = None, pause: float 
         time.sleep(pause)
 
 
-WEIGHTS = [0.05, 0.2, 0.5, 1.0]  # Kandidaten: wie stark zählt ein simulierter Trade im Vergleich zu einem echten
-DEFAULT_WEIGHT = 0.2
+# Kandidaten: Anteil ALLER Simulationen zusammen am Gewicht aller echten Trades (0,1 = Simulationen zählen wie ein Zehntel
+# der echten Trades). Nie 0: Simulationen werden immer verwertet (Burak 24.10.).
+WEIGHTS = [0.02, 0.1, 0.25, 0.5, 1.0, 2.0]
+DEFAULT_WEIGHT = 0.5
 
 
 def weight(user_data: Path | None = None) -> float:
@@ -387,15 +389,17 @@ def evaluate(user_data: Path | None = None) -> dict[str, Any]:
         x_b, fill_b = self_learning._design(both, cols)
         x_te = self_learning._design(test, cols, fill_b)[0]
         for w in WEIGHTS:
-            m = self_learning._fit(x_b, (both["profit_pct"] > 0).to_numpy(int), sim=is_sim, sim_weight=w)
+            m = self_learning._fit(x_b, (both["profit_pct"] > 0).to_numpy(int), sim=is_sim, sim_share=w)
             p = m.predict_proba(x_te)[:, 1]
             rows.append({"Gewicht": w, "AUC": _auc(y_te, p), **_taken(test, p, y_tr)})
         res = pd.DataFrame(rows)
         best = res[res["Gewicht"] > 0].sort_values("AUC", ascending=False).iloc[0]
         out.update(weight=float(best["Gewicht"]), sim_trades=len(sim), avg_all=float(test["profit_pct"].mean()),
                    results=res.to_dict("records"),
-                   why=(f"Simulationen mit Gewicht {best['Gewicht']} am besten "
-                        f"(AUC {best['AUC']:.3f} gegen {rows[0]['AUC']:.3f} ohne)"))
+                   why=(f"Simulationen mit Anteil {best['Gewicht']} am besten (AUC {best['AUC']:.3f}; ohne "
+                        f"Simulationen {rows[0]['AUC']:.3f}" + (", ohne wäre besser – Anteil so klein wie getestet"
+                                                                if rows[0]["AUC"] is not None and best["AUC"] is not None
+                                                                and rows[0]["AUC"] > best["AUC"] else "") + ")"))
     d = sim_dir(user_data)
     d.mkdir(parents=True, exist_ok=True)
     (d / "sim_weight.json").write_text(json.dumps({**out, "checked_at": pd.Timestamp.now(tz="UTC").isoformat()},

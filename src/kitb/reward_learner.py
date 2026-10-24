@@ -57,7 +57,10 @@ def with_simulations(memory: pd.DataFrame, n: int = 20_000) -> pd.DataFrame:
     sim = simulate.load()
     if sim.empty:
         return memory
-    sim = sim[sim.get("ki", "") != "simulation_aktie"].tail(n).assign(weight=simulate.weight())
+    from kitb.self_learning import sim_per_trade
+
+    sim = sim[sim["ki"] != "simulation_aktie"].tail(n) if "ki" in sim else sim.tail(n)
+    sim = sim.assign(weight=sim_per_trade(len(memory), len(sim), simulate.weight()))  # zusammen: Anteil × echte Trades
     mem = memory.assign(weight=1.0) if not memory.empty else memory
     return pd.concat([sim, mem], ignore_index=True)
 

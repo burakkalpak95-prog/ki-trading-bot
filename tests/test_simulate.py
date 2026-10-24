@@ -103,6 +103,21 @@ def test_ki2_learns_from_weighted_simulations(tmp_path, monkeypatch):
     monkeypatch.setattr(simulate, "load", lambda user_data=None, n=0: sim)
     monkeypatch.setattr(simulate, "weight", lambda user_data=None: 0.2)
     mem = reward_learner.with_simulations(pd.DataFrame())
-    assert len(mem) == len(sim) and (mem["weight"] == 0.2).all()
+    assert len(mem) == len(sim) and np.isclose(mem["weight"].sum(), 0.2 * 100)  # zusammen: Anteil × max(echt, 100)
     m = reward_learner.fit(mem)
     assert m.n_trades == len(sim) and set(m.arms) <= set(reward_learner.ARMS) and m.arms
+
+
+def test_simulations_do_not_drown_real_trades():
+    """24.10. live: 60.000 Sim-Trades mit festem Gewicht je Trade übertönten ~400 echte. Jetzt zählen sie ZUSAMMEN nur
+    Anteil × echte Trades."""
+    from kitb import self_learning as sl
+
+    rng = np.random.default_rng(0)
+    n_real, n_sim = 400, 60_000
+    sim = np.r_[np.ones(n_sim, bool), np.zeros(n_real, bool)]
+    t = pd.DataFrame({"kind": np.where(sim, "sim", "signal"), "own": False})
+    w = sl._weights(t)
+    assert np.isclose(w[sim].sum(), sl.SIM_SHARE * n_real) and (w[~sim] == 1.0).all()
+    x = pd.DataFrame({"a": rng.normal(size=len(sim))})
+    sl._fit(x, rng.integers(0, 2, len(sim)), sim=sim, sim_share=0.1)  # läuft mit Anteil statt Gewicht je Trade
