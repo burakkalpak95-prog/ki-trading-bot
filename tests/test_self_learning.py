@@ -90,3 +90,18 @@ def test_custom_stoploss_uses_learned_level():
     stop = s.custom_stoploss("BTC/USDT", trade, None, 100.0, 0.0)
     assert abs(stop - 0.02) < 1e-9  # bei 0 % Gewinn: 2 % unter dem aktuellen Kurs
     assert s.custom_stoploss("BTC/USDT", SimpleNamespace(enter_tag="signal", leverage=1.0), None, 100.0, 0.0) is None
+
+
+def test_threshold_is_base_rate_so_filter_does_not_block_everything(monkeypatch):
+    rng = np.random.default_rng(4)
+    n = 400
+    x = rng.normal(0, 1, n)
+    win = rng.random(n) < 0.15 + 0.2 * (x > 0)  # ~25 % Gewinner, besser bei x > 0
+    t = pd.DataFrame({"close_date": pd.date_range("2026-10-01", periods=n, freq="h").astype(str),
+                      "profit_pct": np.where(win, 0.02, -0.01), "rsi_14": x, "reason": "signal"})
+    monkeypatch.setattr(sl, "own_trades", lambda ki, ud=None: t)
+    sl._cache.clear()
+    s = sl.state("bot_b")
+    assert 0.15 < s["threshold"] < 0.4
+    allowed = [sl.win_chance("bot_b", {"rsi_14": v})[0] for v in np.linspace(-2, 2, 21)]
+    assert any(allowed) and not all(allowed) if s["active"] else all(allowed)

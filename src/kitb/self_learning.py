@@ -64,6 +64,13 @@ def _design(df: pd.DataFrame, columns: list[str], fill: pd.Series | None = None)
     return x.fillna(fill).fillna(0.0), fill
 
 
+def _base_rate(y: np.ndarray, own: np.ndarray) -> float:
+    """Schwelle = Anteil Gewinner im Gedächtnis (gewichtet). Bei ~25 % Gewinnern hieße „≥ 50 %“ praktisch: nie
+    einsteigen (24.10. live: 0 von 395 Signalen erlaubt). Durch kommt, was BESSER als ein durchschnittlicher Trade ist."""
+    w = np.where(own, OWN_WEIGHT, 1.0)
+    return float((y * w).sum() / w.sum())
+
+
 def train(trades: pd.DataFrame) -> dict[str, Any]:
     """Modell + Nachweis: filtert nur, wenn es auf ungesehenen jüngsten Trades das Ø-Ergebnis verbessert hätte."""
     from kitb.shared_memory import SNAPSHOT_FEATURES
@@ -86,12 +93,12 @@ def train(trades: pd.DataFrame) -> dict[str, Any]:
         x_old, fill = _design(old, cols)
         m = _fit(x_old, y[:cut], own[:cut])
         p = m.predict_proba(_design(new, cols, fill)[0])[:, 1]
-        taken = new["profit_pct"].to_numpy()[p >= 0.5]
+        taken = new["profit_pct"].to_numpy()[p >= _base_rate(y[:cut], own[:cut])]
         base, filt = float(new["profit_pct"].mean()), (float(taken.mean()) if len(taken) >= 5 else None)
         out.update(check_all=base, check_filtered=filt, check_taken=int(len(taken)), check_n=len(new))
         out["active"] = filt is not None and filt > base
     x, fill = _design(t, cols)
-    out.update(model=_fit(x, y, own), columns=cols, fill=fill, own=int(own.sum()))
+    out.update(model=_fit(x, y, own), columns=cols, fill=fill, own=int(own.sum()), threshold=_base_rate(y, own))
     out["why"] = ("Filter aktiv: auf den jüngsten Trades besser als alle nehmen" if out["active"]
                   else "Filter aus: noch kein Vorteil auf ungesehenen Trades nachgewiesen")
     return out
@@ -114,7 +121,8 @@ def win_chance(ki: str, features: dict[str, float], user_data: Path | None = Non
         return True, None, s["why"]
     x, _ = _design(pd.DataFrame([features]), s["columns"], s["fill"])
     p = float(s["model"].predict_proba(x)[0, 1])
-    return (p >= 0.5 or not s["active"]), p, s["why"]
+    thr = s.get("threshold", 0.5)
+    return (p >= thr or not s["active"]), p, f"{s['why']}, Schwelle {thr:.0%}"
 
 
 def _hold_option(row, options: list[int], minutes: int) -> int | None:
