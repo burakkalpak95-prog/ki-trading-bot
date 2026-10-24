@@ -69,3 +69,24 @@ def test_fill_features_for_rule_bot_trades_without_lookahead(tmp_path):
     assert abs(f["ret_1h"] - (close[599] / close[598] - 1)) < 1e-12
     mem = shared_memory.load(tmp_path)
     assert mem.loc[0, "ret_1h"] == f["ret_1h"] and shared_memory.fill_features(tmp_path, get=get) == 0
+
+
+def test_stop_choice_learns_and_never_looser_than_limit():
+    rows = [{"reason": "signal · halten:4 · stop:2", "profit_pct": -0.02}] * 30 + \
+           [{"reason": "signal · halten:4 · stop:6", "profit_pct": 0.01}] * 30
+    t = pd.DataFrame(rows)
+    picks = [sl.choose_stop(t, seed) for seed in range(200)]
+    assert picks.count(6) > picks.count(2) and set(picks) <= set(sl.STOP_OPTIONS) and max(sl.STOP_OPTIONS) <= 6
+    assert sl.stop_from_tag("signal · halten:8 · stop:4 · Bots: EMA") == 4 and sl.stop_from_tag("signal") is None
+
+
+def test_custom_stoploss_uses_learned_level():
+    from types import SimpleNamespace
+
+    from kitb.ml_strategy import KitbFreqaiBase
+
+    s = KitbFreqaiBase.__new__(KitbFreqaiBase)
+    trade = SimpleNamespace(enter_tag="signal · halten:4 · stop:2", leverage=1.0)
+    stop = s.custom_stoploss("BTC/USDT", trade, None, 100.0, 0.0)
+    assert abs(stop - 0.02) < 1e-9  # bei 0 % Gewinn: 2 % unter dem aktuellen Kurs
+    assert s.custom_stoploss("BTC/USDT", SimpleNamespace(enter_tag="signal", leverage=1.0), None, 100.0, 0.0) is None

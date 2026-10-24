@@ -87,7 +87,9 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
                 n = self_learning.hold_for(self.config.get("bot_name", ""), self._hold_options(),
                                            metadata.get("pair", ""), df["date"].iloc[-1],
                                            timeframe_to_minutes(self.timeframe))
-                df.loc[df.index[-1], "enter_tag"] = f"{df['enter_tag'].iloc[-1]} · halten:{n}"
+                st = self_learning.stop_for(self.config.get("bot_name", ""), metadata.get("pair", ""),
+                                            df["date"].iloc[-1])
+                df.loc[df.index[-1], "enter_tag"] = f"{df['enter_tag'].iloc[-1]} · halten:{n} · stop:{st}"
             except Exception:  # noqa: BLE001 – ohne Wahl gilt die feste Haltedauer
                 log.exception("Haltedauer konnte nicht gewählt werden")
         return df
@@ -103,6 +105,21 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
         df.loc[(df["up"] < self._kitb()["exit_proba"]) & (df["volume"] > 0),
                ["exit_long", "exit_tag"]] = (1, "ml_weak")
         return df
+
+    use_custom_stoploss = True
+
+    def custom_stoploss(self, pair, trade, current_time, current_rate, current_profit, after_fill=False, **kwargs):
+        """Gelernte Stoploss-Stufe (Burak 24.10.2026). Freqtrade zieht den Stop nur nach oben: die feste Grenze
+        ``stoploss`` (−6 %) bleibt die lockerste mögliche Stufe."""
+        from freqtrade.strategy import stoploss_from_open
+
+        from kitb.self_learning import stop_from_tag
+
+        chosen = stop_from_tag(trade.enter_tag)
+        if not chosen:
+            return None
+        return stoploss_from_open(-min(chosen / 100, abs(self.stoploss)), current_profit, is_short=False,
+                                  leverage=trade.leverage or 1.0) or None
 
     def custom_exit(self, pair, trade, current_time, current_rate, current_profit, **kwargs):
         """Lernmodus: Übungstrades spätestens nach ``max_hold_candles`` schließen, damit Ergebnisse entstehen."""

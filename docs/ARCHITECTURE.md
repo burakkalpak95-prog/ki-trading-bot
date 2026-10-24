@@ -327,7 +327,7 @@ Burak: „die KI soll natürlich selber lernen … sie sollen keine festen Vorga
 - Das gemeinsame Gedächtnis (`shared.sqlite`) nimmt jetzt die abgeschlossenen Trades ALLER Paper-Bots auf, also auch der Regel-Bots. Trades ohne Einstiegsnotiz bekommen die Marktlage aus der letzten abgeschlossenen Binance-Stundenkerze vor dem Einstieg (`shared_memory.fill_features`, einziger Schreiber `ai-memory`).
 - `kitb.self_learning` (KI 1, Bot A, Bot B im Paper-Lernmodus):
   - Ein Gewinnchance-Modell, angepasst sobald ein neuer Trade im Gedächtnis steht; eigene Trades zählen dreifach. Es filtert Signal-Trades erst, wenn es auf den jüngsten ungesehenen Trades besser war als alle nehmen.
-  - Die Haltedauer wird per Thompson-Sampling nach den Ergebnissen gewählt und steht im Einstiegsgrund („halten:N“).
+  - Die Haltedauer und die Stoploss-Stufe (−2/−4/−6 %, nie lockerer als die feste Grenze −6 %) werden per Thompson-Sampling nach den Ergebnissen gewählt und stehen im Einstiegsgrund („halten:N · stop:N“).
   - Der feste Sofort-Ausstieg „ml_weak“ entfällt.
 - KI 2 lernt damit ebenfalls aus allen Bot-Trades.
 - Fest bleiben nur die Sicherheitsgrenzen: Stoploss, Tagesverlust, Positionsgröße und Drawdown.

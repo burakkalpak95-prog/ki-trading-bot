@@ -25,6 +25,8 @@ MIN_TRADES = 40  # vorher kein Filter: zu wenig eigene Ergebnisse
 HOLDOUT = 0.3  # jüngste 30 % der Trades prüfen das Modell, das nur die älteren gesehen hat
 HALF_LIFE = 200  # jüngere Trades zählen mehr (Halbwertszeit in Trades)
 HOLD_RE = re.compile(r"halten:(\d+)")
+STOP_RE = re.compile(r"stop:(\d+)")
+STOP_OPTIONS = [2, 4, 6]  # Ausstieg bei −2/−4/−6 %; −6 % ist zugleich die harte Grenze der Strategie (nie lockerer)
 
 _cache: dict[tuple, Any] = {}
 
@@ -163,3 +165,34 @@ def hold_for(ki: str, options: list[int], pair: str, when: Any, minutes: int = 1
 def hold_from_tag(tag: str | None) -> int | None:
     m = HOLD_RE.search(tag or "")
     return int(m.group(1)) if m else None
+
+
+def stop_from_tag(tag: str | None) -> int | None:
+    m = STOP_RE.search(tag or "")
+    return int(m.group(1)) if m else None
+
+
+def choose_stop(trades: pd.DataFrame, seed: int, options: list[int] | None = None) -> int:
+    """Thompson-Sampling über das Ø-Ergebnis je Stoploss-Stufe. Nur Trades mit gewählter Stufe zählen (bei anderen ist
+    unbekannt, wie sie mit einer anderen Stufe ausgegangen wären)."""
+    options = options or STOP_OPTIONS
+    rng = np.random.default_rng(seed)
+    rows = []
+    t = trades.dropna(subset=["profit_pct"]) if not trades.empty and "profit_pct" in trades else pd.DataFrame()
+    for o in options:
+        part = t[t["reason"].map(stop_from_tag) == o] if not t.empty and "reason" in t else t
+        w = np.where(part["own"], OWN_WEIGHT, 1.0) if "own" in part else np.ones(len(part))
+        r = part["profit_pct"].to_numpy() if len(part) else np.array([])
+        n = float(w.sum())
+        mean = float((r * w).sum() / n) if n else 0.0
+        std = float(np.sqrt((w * (r - mean) ** 2).sum() / n)) if len(r) > 1 else 0.02
+        rows.append((o, n, mean, std))
+    st = pd.DataFrame(rows, columns=["stop", "n", "mean", "std"])
+    sd = st["std"].clip(lower=0.005) / np.sqrt(st["n"] + 1)
+    draw = rng.normal(st["mean"] * st["n"] / (st["n"] + 1), sd)
+    return int(st["stop"].iloc[int(np.argmax(draw))])
+
+
+def stop_for(ki: str, pair: str, when: Any, user_data: Path | None = None) -> int:
+    t = state(ki, user_data)["_trades"]
+    return choose_stop(t, zlib.crc32(f"stop|{pair}|{pd.Timestamp(when).isoformat()}|{len(t)}".encode()))
