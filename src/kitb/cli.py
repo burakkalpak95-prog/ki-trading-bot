@@ -348,6 +348,23 @@ def cmd_ki1_sweep(args) -> int:
     return 0
 
 
+def cmd_simulate(args) -> int:
+    """Simulierte Trades auf echten Kursen seit 2022 als Lerndaten; ``eval`` wählt ihr Gewicht an echten Trades."""
+    from kitb import simulate
+
+    if args.action in ("build", "all"):
+        _print(simulate.build(datadir=paths.DATA_DIR / args.source))
+    if args.action == "loop":
+        simulate.loop()
+        return 0
+    if args.action in ("eval", "all"):
+        res = simulate.evaluate()
+        _print({k: v for k, v in res.items() if k != "results"})
+        for r in res.get("results", []):
+            print(r)
+    return 0
+
+
 def cmd_news_test(args) -> int:
     """Schlagzeilen-Test: Wortliste vs. lokales Sprachmodell (Ollama) – sagt die Bewertung die Kurse danach voraus?"""
     from kitb import news_test
@@ -599,6 +616,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--timerange", default="20240101-20251104")
     s.add_argument("--only", nargs="*")
     s.set_defaults(func=cmd_ki1_sweep)
+
+    s = sub.add_parser("simulate", help="Simulierte Trades (was wäre wenn) als Lerndaten für die KIs")
+    s.add_argument("action", choices=["build", "eval", "all", "loop"])
+    s.add_argument("--source", default="binance")
+    s.set_defaults(func=cmd_simulate)
 
     s = sub.add_parser("news-test", help="Schlagzeilen-Test: Wortliste vs. lokales Sprachmodell (nur Historie)")
     s.add_argument("headlines", help="Datei oder Ordner mit Schlagzeilen (CSV/Parquet/JSONL mit Zeitstempel + Titel)")

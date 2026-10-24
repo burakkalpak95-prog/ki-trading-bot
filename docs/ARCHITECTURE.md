@@ -332,3 +332,19 @@ Burak: „die KI soll natürlich selber lernen … sie sollen keine festen Vorga
 - KI 2 lernt damit ebenfalls aus allen Bot-Trades.
 - Fest bleiben nur die Sicherheitsgrenzen: Stoploss, Tagesverlust, Positionsgröße und Drawdown.
 - Unsicher: Die nachgetragene Marktlage stammt aus 1h-Kerzen, die Notizen der KIs aus ihrem eigenen Zeitrahmen. Die Werte sind ähnlich, aber nicht identisch.
+
+## ADR-021: Endlos-Simulation als Lerndaten (24.10.2026)
+
+Burak: „lass die KIs simulieren … wenn ein Durchlauf fertig ist, soll der nächste starten, die KI soll das Gewonnene direkt verwerten“. Die Simulationen sollen außerdem „auf jeden Fall verwertet“ werden.
+
+- `kitb.simulate` baut alle 6 h eine Kurstabelle. Sie enthält Krypto-Stundenkerzen seit 2022 (lokal plus die letzten ~41 Tage frisch von Binance) und S&P 500 / Nasdaq 100 als Tageskurse aus FRED. Zu jeder Gelegenheit stehen dort die Marktlage der Vorkerze und das Ergebnis jeder Kombination aus Haltedauer (1/2/4/8 h bzw. Tage) und Stoploss (−2/−4/−6 %), nach realistischen Kosten.
+- Der Dienst `ai-simulation` (`kitb simulate loop`, höchstens 2 CPU-Kerne) spielt Runde um Runde:
+  - Er lernt das Modell aus echten Trades und bisherigen Simulationen.
+  - Er steigt ein, wo es sich lohnt, plus 15 % Lern-Trades. Haltedauer und Stoploss wählt er per Thompson.
+  - Die Ergebnisse gehen ins Gedächtnis (`simulated_trades.parquet`), die nächste Runde folgt sofort. Der Fortschritt steht in `sim_rounds.jsonl` und `sim_status.json`.
+- `kitb.self_learning` nimmt die Simulationen IMMER mit auf, auch die der letzten Stunden, also auch ausgelassene Signale. Der Stand wird alle 15 Minuten übernommen.
+- Wie stark Simulationen zählen (0,05 bis 1 eines echten Trades), wählt `simulate.evaluate` an den echten Paper-Trades nach AUC. Aktien zählen höchstens mit einem Fünftel der Menge.
+- Unsicher:
+  - Stoploss auf Kerzenbasis ist vorsichtig gerechnet.
+  - Aktien haben eine andere Zeitskala und nur Schlusskurse.
+  - Die Vergangenheit wiederholt sich nicht genau. Deshalb zählt die Prüfung an echten Trades.

@@ -165,3 +165,13 @@ services:
     restart: unless-stopped
     environment:
       PYTHONUNBUFFERED: "1"  # Fortschritt sofort in docker logs sehen
+
+  # Endlos-Simulation (Burak 24.10.2026): die KIs spielen auf echten Kursen seit 2022 (Krypto stündlich, Aktien-Indizes
+  # täglich) „was wäre wenn“, lernen aus jeder Runde und spielen sofort weiter. Kein Handel, nur Lerndaten.
+  ai-simulation:
+    <<: *paper-fleet
+    command: ["simulate", "loop"]
+    restart: unless-stopped
+    cpus: "2.0"  # höchstens 2 Kerne, damit die Bots nicht ausgebremst werden
+    environment:
+      PYTHONUNBUFFERED: "1"
