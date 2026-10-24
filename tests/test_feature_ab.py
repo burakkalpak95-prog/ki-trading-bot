@@ -31,6 +31,8 @@ def test_sweep_overlay_and_render(tmp_path):
     cfg = json.loads(feature_ab._overlay(tmp_path, "s", True, v).read_text(encoding="utf-8"))["freqai"]
     assert cfg["kitb"]["label_threshold"] == 0.03 and cfg["kitb"]["entry_proba"] == 0.65
     assert cfg["feature_parameters"]["label_period_candles"] == 24
+    h = json.loads(feature_ab._overlay(tmp_path, "h", True, feature_ab.SWEEP["1h_halten_12h"]).read_text(encoding="utf-8"))
+    assert h["freqai"]["kitb"]["max_hold_candles"] == 12 and h["freqai"]["kitb"]["exit_proba"] == 0.0
     assert cfg["feature_parameters"]["include_timeframes"] == ["1h", "4h", "1d"]
     r = _r(100, -0.1)
     r["trades"] = {"avg_profit": -0.002, "exit_reasons": {"stop_loss": {"n": 40, "avg_profit": -0.06},

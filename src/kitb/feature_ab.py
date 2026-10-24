@@ -36,7 +36,7 @@ def _overlay(out: Path, identifier: str, extra: bool, variant: dict[str, Any] | 
     kitb = cfg["freqai"].setdefault("kitb", {})
     kitb["extra_features"] = extra
     v = variant or {}
-    kitb.update({k: v[k] for k in ("label_threshold", "entry_proba", "exit_proba") if k in v})
+    kitb.update({k: v[k] for k in ("label_threshold", "entry_proba", "exit_proba", "max_hold_candles") if k in v})
     fp = cfg["freqai"]["feature_parameters"]
     fp.update({k: v[k] for k in ("label_period_candles", "include_timeframes") if k in v})
     p.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
@@ -124,6 +124,12 @@ SWEEP: dict[str, dict[str, Any]] = {
                            "label_threshold": 0.015},
     "1h_ziel_3pct_24h": {"timeframe": "1h", "include_timeframes": ["1h", "4h", "1d"], "label_period_candles": 24,
                          "label_threshold": 0.03, "entry_proba": 0.65},
+    # Paper-Auswertung 24.10.: 111 von 125 Trades enden mit „ml_weak“ nach Ø 1,5 h -> ohne Schnellausstieg, fest halten
+    "15m_halten_3h": {"exit_proba": 0.0, "max_hold_candles": 12},
+    "15m_ziel_1pct_halten_4h": {"label_threshold": 0.01, "label_period_candles": 16, "exit_proba": 0.0,
+                                "max_hold_candles": 16},
+    "1h_halten_12h": {"timeframe": "1h", "include_timeframes": ["1h", "4h", "1d"], "label_period_candles": 12,
+                      "label_threshold": 0.015, "exit_proba": 0.0, "max_hold_candles": 12},
     "4h_ziel_5pct_4d": {"timeframe": "4h", "include_timeframes": ["4h", "1d"], "label_period_candles": 24,
                         "label_threshold": 0.05},
 }
