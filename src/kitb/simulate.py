@@ -170,6 +170,14 @@ def build(*, pairs: list[str] | None = None, datadir: Path | None = None, user_d
         # RECENT_15M_DAYS Tage (nicht seit 2022: der Arbeitsspeicher reicht dafür nicht)
         try:
             q = load_ohlcv_raw(datadir, pair, "15m")
+            if get is not False:  # die letzten ~10 Tage frisch von Binance: lokale 15m-Dateien lädt kein Dienst nach
+                try:
+                    r = _klines_15m(pair, get or __import__("kitb.market_flow").market_flow._get)
+                    r = r[r["date"] < pd.Timestamp.now(tz="UTC").floor("15min")]
+                    if not r.empty:
+                        q = pd.concat([q[q["date"] < r["date"].min()] if not q.empty else q, r], ignore_index=True)
+                except Exception:  # noqa: BLE001
+                    pass
             q = q[q["date"] >= q["date"].max() - pd.Timedelta(days=RECENT_15M_DAYS + 3)] if not q.empty else q
             if until:
                 q = q[q["date"] < pd.Timestamp(until, tz="UTC")]
@@ -195,6 +203,15 @@ def build(*, pairs: list[str] | None = None, datadir: Path | None = None, user_d
             "aktien": int((table["asset"] == "aktie").sum()), "krypto_15m": int((table["asset"] == "krypto15").sum()),
             "cost_round_trip": cost,
             "win_rate": float((sim["profit_pct"] > 0).mean())}
+
+
+def _klines_15m(pair: str, get) -> pd.DataFrame:
+    from kitb import market_flow
+
+    rows = get(f"{market_flow.SPOT}/api/v3/klines", {"symbol": market_flow.symbol(pair), "interval": "15m", "limit": 1000})
+    return pd.DataFrame({"date": pd.to_datetime([r[0] for r in rows], unit="ms", utc=True),
+                         **{c: [float(r[i]) for r in rows] for c, i in
+                            (("open", 1), ("high", 2), ("low", 3), ("close", 4), ("volume", 5))}})
 
 
 def _round_trades(table: pd.DataFrame, hs: np.ndarray, ss: np.ndarray, label: str) -> pd.DataFrame:
