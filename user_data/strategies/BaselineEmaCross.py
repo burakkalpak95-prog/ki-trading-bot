@@ -13,11 +13,12 @@ from pandas import DataFrame
 import talib.abstract as ta
 from freqtrade.strategy import IStrategy, IntParameter
 from kitb.risk import RiskManagedMixin
+from kitb.rule_learning import StyleAiMixin
 from technical import qtpylib
 from kitb.indicators import STARTUP_CANDLES_1H
 
 
-class BaselineEmaCross(RiskManagedMixin, IStrategy):
+class BaselineEmaCross(StyleAiMixin, RiskManagedMixin, IStrategy):
     INTERFACE_VERSION = 3
 
     timeframe = "1h"

@@ -133,6 +133,11 @@ services:
   paper-squeeze-15m:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "squeeze_15m"]
+  # 25.10.2026: alle Sammler oben sind Stil-KIs (Stil schlägt vor, KI entscheidet aus dem gemeinsamen Gedächtnis).
+  # Neu: Trendfolge-KI auf Tageskerzen mit Bitcoin-Filter. Freigabe: kitb strategies approve --id trend_btc_d1
+  paper-trend-btc-d1:
+    <<: *paper-fleet
+    command: ["paper", "run", "--bot", "trend_btc_d1"]
 
   # Marktdaten für die KIs (nur öffentliche Daten, kein Handel): Kaufdruck, Terminmarkt, Orderbuch, Gesamtmarkt.
   market-flow:

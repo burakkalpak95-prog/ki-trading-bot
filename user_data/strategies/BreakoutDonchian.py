@@ -8,11 +8,12 @@ from pandas import DataFrame
 
 from freqtrade.strategy import IStrategy
 from kitb.risk import RiskManagedMixin
+from kitb.rule_learning import StyleAiMixin
 from kitb import indicators as ind
 from kitb.indicators import STARTUP_CANDLES_1H
 
 
-class BreakoutDonchian(RiskManagedMixin, IStrategy):
+class BreakoutDonchian(StyleAiMixin, RiskManagedMixin, IStrategy):
     INTERFACE_VERSION = 3
     timeframe = "1h"
     can_short = False

@@ -227,6 +227,9 @@ def test_explore_bots_are_marked_and_candidate_stays_candidate(reg, tmp_path):
         strategy_approval.approve(reg, i, by="Burak", reason="Test")
     assert paper.build_paper_config("trend_d1", reg, tmp_path / "ud")[1]["kitb_mode"] == "candidate"
     assert paper.build_paper_config("donchian_1h", reg, tmp_path / "ud")[1]["kitb_mode"] == "explore"
+    # Burak 25.10.2026: alle Sammler sind Stil-KIs, der Kandidat trend_d1 bleibt unverändert
+    assert paper.build_paper_config("donchian_1h", reg, tmp_path / "ud")[1]["kitb_style_ai"] is True
+    assert paper.build_paper_config("trend_d1", reg, tmp_path / "ud")[1]["kitb_style_ai"] is False
 
 
 def test_new_round_archives_db_and_keeps_history(tmp_path, monkeypatch):

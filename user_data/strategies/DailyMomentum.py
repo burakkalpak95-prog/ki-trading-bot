@@ -8,12 +8,13 @@ from pandas import DataFrame
 
 from freqtrade.strategy import IStrategy
 from kitb.risk import RiskManagedMixin
+from kitb.rule_learning import StyleAiMixin
 from kitb.indicators import STARTUP_CANDLES_1D
 
 LOOKBACK_DAYS = 90
 
 
-class DailyMomentum(RiskManagedMixin, IStrategy):
+class DailyMomentum(StyleAiMixin, RiskManagedMixin, IStrategy):
     INTERFACE_VERSION = 3
     timeframe = "1d"
     can_short = False

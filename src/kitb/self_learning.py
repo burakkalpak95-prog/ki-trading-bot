@@ -120,15 +120,32 @@ def _fit(x: pd.DataFrame, y: np.ndarray, own: np.ndarray | None = None, sim: np.
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
 
-    sim = np.zeros(len(y), bool) if sim is None else np.asarray(sim, bool)
-    w = np.zeros(len(y))
+    m = make_pipeline(StandardScaler(), LogisticRegression(C=0.3, max_iter=500))
+    m.fit(x, y, logisticregression__sample_weight=_sample_weights(len(y), own, sim, sim_share, rel))
+    return m
+
+
+def _sample_weights(n: int, own: np.ndarray | None, sim: np.ndarray | None, sim_share: float | None,
+                    rel: np.ndarray | None) -> np.ndarray:
+    sim = np.zeros(n, bool) if sim is None else np.asarray(sim, bool)
+    w = np.zeros(n)
     n_real = int((~sim).sum())
     w[~sim] = 0.5 ** ((n_real - 1 - np.arange(n_real)) / HALF_LIFE)
     if own is not None:
         w = w * np.where(own, OWN_WEIGHT, 1.0)
     w[sim] = sim_per_trade(w[~sim].sum(), int(sim.sum()), sim_share) * (1.0 if rel is None else np.asarray(rel))
-    m = make_pipeline(StandardScaler(), LogisticRegression(C=0.3, max_iter=500))
-    m.fit(x, y, logisticregression__sample_weight=w)
+    return w
+
+
+def _fit_net(x: pd.DataFrame, ret: np.ndarray, own: np.ndarray | None = None, sim: np.ndarray | None = None,
+             rel: np.ndarray | None = None):
+    """Erwartete Rendite NACH Gebühren je Marktlage (Ridge-Regression, gleiche Gewichte wie die Gewinnchance)."""
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    m = make_pipeline(StandardScaler(), Ridge(alpha=10.0))
+    m.fit(x, np.clip(ret, -0.1, 0.1), ridge__sample_weight=_sample_weights(len(ret), own, sim, None, rel))
     return m
 
 
@@ -190,12 +207,24 @@ def train(trades: pd.DataFrame) -> dict[str, Any]:
         base, filt = float(new["profit_pct"].mean()), (float(taken.mean()) if len(taken) >= 5 else None)
         out.update(check_all=base, check_filtered=filt, check_taken=int(len(taken)), check_n=len(new))
         out["active"] = filt is not None and filt > base
+        # Netto-Ziel (Test 25.10. auf echten Trades + Simulationen seit 2022: einzige Idee, die früh UND spät ins Plus
+        # kam): Signal-Trades nur, wenn die KI nach Gebühren Gewinn erwartet. Wie die Gewinnchance erst aktiv, wenn das
+        # auf den jüngsten ungesehenen Trades besser war als „alle nehmen“.
+        r = _fit_net(x_old, old["profit_pct"].to_numpy(float), own_old, sim_old, _rel(sim_t))
+        net = new["profit_pct"].to_numpy()[r.predict(_design(new, cols, fill)[0]) > 0]
+        net_mean = float(net.mean()) if len(net) >= 5 else None
+        out.update(check_net=net_mean, check_net_taken=int(len(net)))
+        out["net_active"] = net_mean is not None and net_mean > base and net_mean > (filt if out["active"] else base)
     full = pd.concat([sim_t, t], ignore_index=True) if not sim_t.empty else t
     x, fill = _design(full, cols)
     out.update(model=_fit(x, (full["profit_pct"] > 0).to_numpy(int), np.r_[np.zeros(len(sim_t), bool), own],
                           np.r_[np.ones(len(sim_t), bool), np.zeros(len(t), bool)], rel=_rel(sim_t)),
                columns=cols, fill=fill, own=int(own.sum()), threshold=_base_rate(y, own), simulated=len(sim_t))
-    out["why"] = ("Filter aktiv: auf den jüngsten Trades besser als alle nehmen" if out["active"]
+    if out.get("net_active"):
+        out["net_model"] = _fit_net(x, full["profit_pct"].to_numpy(float), np.r_[np.zeros(len(sim_t), bool), own],
+                                    np.r_[np.ones(len(sim_t), bool), np.zeros(len(t), bool)], _rel(sim_t))
+    out["why"] = ("Netto-Ziel aktiv: nur Einstiege mit erwartetem Gewinn nach Gebühren" if out.get("net_active")
+                  else "Filter aktiv: auf den jüngsten Trades besser als alle nehmen" if out["active"]
                   else "Filter aus: noch kein Vorteil auf ungesehenen Trades nachgewiesen")
     return out
 
@@ -218,8 +247,9 @@ def _sims(user_data: Path | None) -> pd.DataFrame:
     return _SIM["df"]
 
 
-def state(ki: str, user_data: Path | None = None) -> dict[str, Any]:
-    """Aktuelles Modell; neu angepasst, sobald ein neuer eigener Trade im Gedächtnis steht."""
+def state(ki: str, user_data: Path | None = None, sims: bool = True) -> dict[str, Any]:
+    """Aktuelles Modell; neu angepasst, sobald ein neuer eigener Trade im Gedächtnis steht. ``sims=False``: ohne
+    Simulationen (Stil-KIs aus den Regel-Bots, 25.10.: spart ~1 GB Arbeitsspeicher je Bot)."""
     t = own_trades(ki, user_data)
     from kitb import simulate
 
@@ -227,12 +257,12 @@ def state(ki: str, user_data: Path | None = None) -> dict[str, Any]:
     SIM_SHARE = simulate.weight(user_data)  # Simulationen zählen immer mit, den Anteil wählt der Vergleich
     # Alle bereits abgeschlossenen Simulationen, auch der letzten Tage: damit lernt die KI auch, wie ihre AUSGELASSENEN
     # Signale ausgegangen wären (jede Stunde und jeder Coin wird simuliert, nicht nur die genommenen Trades)
-    sim = _sims(user_data)
+    sim = _sims(user_data) if sims else pd.DataFrame()
     if not sim.empty:
         sim = sim[pd.to_datetime(sim["close_date"], utc=True, format="ISO8601") < pd.Timestamp.now(tz="UTC")]
     real = t
     t = pd.concat([sim, t], ignore_index=True) if not sim.empty else t
-    key = (ki, str(user_data), len(t), None if t.empty else str(t["close_date"].iloc[-1]))
+    key = (ki, str(user_data), sims, len(t), None if t.empty else str(t["close_date"].iloc[-1]))
     if key not in _cache:
         _cache.clear()
         if not sim.empty:  # die KI stuft jede Simulation selbst als mehr oder weniger brauchbar ein
@@ -242,13 +272,17 @@ def state(ki: str, user_data: Path | None = None) -> dict[str, Any]:
     return _cache[key]
 
 
-def win_chance(ki: str, features: dict[str, float], user_data: Path | None = None) -> tuple[bool, float | None, str]:
+def win_chance(ki: str, features: dict[str, float], user_data: Path | None = None,
+               sims: bool = True) -> tuple[bool, float | None, str]:
     """(erlaubt?, Gewinnchance, Begründung). Ohne nachgewiesenen Vorteil: immer erlaubt."""
-    s = state(ki, user_data)
+    s = state(ki, user_data, sims)
     if s.get("model") is None:
         return True, None, s["why"]
     x, _ = _design(pd.DataFrame([features]), s["columns"], s["fill"])
     p = float(s["model"].predict_proba(x)[0, 1])
+    if s.get("net_model") is not None:
+        e = float(s["net_model"].predict(x)[0])
+        return e > 0, p, f"{s['why']}, erwartet {e:+.2%}"
     thr = s.get("threshold", 0.5)
     return (p >= thr or not s["active"]), p, f"{s['why']}, Schwelle {thr:.0%}"
 
@@ -329,6 +363,6 @@ def choose_stop(trades: pd.DataFrame, seed: int, options: list[int] | None = Non
     return int(st["stop"].iloc[int(np.argmax(draw))])
 
 
-def stop_for(ki: str, pair: str, when: Any, user_data: Path | None = None) -> int:
-    t = state(ki, user_data)["_trades"]
+def stop_for(ki: str, pair: str, when: Any, user_data: Path | None = None, sims: bool = True) -> int:
+    t = state(ki, user_data, sims)["_trades"]
     return choose_stop(t, zlib.crc32(f"stop|{pair}|{pd.Timestamp(when).isoformat()}|{len(t)}".encode()))

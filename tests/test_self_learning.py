@@ -171,3 +171,26 @@ def test_unstable_features_are_dropped_by_the_ai_itself():
                                   "profit_pct": np.where(rng.random(n) < p, 0.01, -0.01)}))
     sim = pd.concat(rows, ignore_index=True)
     assert self_learning.stable_columns(sim, ["good", "flip", "fehlt"]) == ["good", "fehlt"]
+
+
+def test_net_goal_takes_only_trades_expected_above_fees(monkeypatch):
+    """Test 25.10.: Signal-Trades nur bei erwartetem Gewinn NACH Gebühren (einzige Idee früh UND spät im Plus)."""
+    rng = np.random.default_rng(5)
+    n = 400
+    x = rng.normal(0, 1, n)
+    t = pd.DataFrame({"close_date": pd.date_range("2026-10-01", periods=n, freq="h").astype(str),
+                      "profit_pct": 0.01 * x - 0.006 + rng.normal(0, 0.003, n), "rsi_14": x,
+                      "ret_1h": rng.normal(0, 1, n), "reason": "signal"})
+    s = sl.train(t)
+    assert s["net_active"] and s["check_net"] > s["check_all"]
+    monkeypatch.setattr(sl, "own_trades", lambda ki, ud=None: t)
+    sl._cache.clear()
+    ok_hi, _, why = sl.win_chance("ema_cross_15m", {"rsi_14": 2.0, "ret_1h": 0.0}, sims=False)
+    ok_lo, p_lo, _ = sl.win_chance("ema_cross_15m", {"rsi_14": 0.5, "ret_1h": 0.0}, sims=False)
+    assert ok_hi and "erwartet" in why
+    assert not ok_lo and p_lo > s["threshold"]  # die Gewinnchance allein hätte den Verlust-Trade erlaubt
+
+
+def test_net_goal_stays_off_without_edge():
+    s = sl.train(_trades(300, signal=False))
+    assert not s.get("net_active") and s.get("net_model") is None

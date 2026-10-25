@@ -92,7 +92,8 @@
         ],
         "daily_strategies": [
             "DailyTrendSma",
-            "DailyMomentum"
+            "DailyMomentum",
+            "TrendSmaBtc"
         ]
     },
     "bots": {
@@ -337,6 +338,11 @@
             "description": "Datensammler: Volatilitäts-Ausbruch (Squeeze), 15-Minuten-Kerzen (handelt häufiger)",
             "mode": "explore",
             "timeframe": "15m"
+        },
+        "trend_btc_d1": {
+            "strategy": "TrendSmaBtc",
+            "description": "Stil-KI Trendfolge (Tageskerzen): Kurs über 50-Tage-Linie und Bitcoin über 200-Tage-Linie; im Test 25.10. einziger robust positiver Profi-Stil",
+            "mode": "explore"
         }
     },
     "paper_learning": {
@@ -344,6 +350,8 @@
         "$comment_retrain": "Burak 23.10.2026 Regel 1 (Lernzyklus so oft wie möglich): Bot A/B lernen stündlich neu statt alle 4 h (eine neue 1h-Kerze je Stunde). Falls die CPU nicht mitkommt, wieder erhöhen.",
         "retrain_hours": 1,
         "memory_every_hours": 1,
+        "$comment_style_ai": "Burak 25.10.2026 („lieber mehr KIs, die sich das Gedächtnis teilen, alle auf andere Art vorgehen“): alle Datensammler (mode explore) sind Stil-KIs – ihr Stil schlägt Einstiege vor, die KI entscheidet Einstieg und Stoploss aus dem gemeinsamen Gedächtnis (kitb.rule_learning). trend_d1 (Kandidat) bleibt unverändert als Vergleich.",
+        "style_ai_modes": ["explore"],
         "$comment_slots": "Freigabe Burak 23.10.2026: zuerst bis 6, dann („was am besten für die Lerndaten ist“) ein Platz je Lern-Coin. KIs im Paper-Lernmodus: Einsatz je Trade = Konto × Gesamteinsatz-Limit / Plätze (Plätze höchstens Anzahl Lern-Coins). Tagesverlust-, Positions- und Drawdown-Limits unverändert. Kandidaten und Sammler bleiben bei risk.json. Burak 25.10.2026 („Ja“): 29 Lern-Coins, 29 Plätze (TON bei Binance-Spot inaktiv), Einsatz je Trade entsprechend kleiner (Gesamteinsatz-Limit unverändert).",
         "max_open_positions_learning": 29,
         "$comment_practice": "KI-Bots üben im Paper-Lernmodus (Burak 23.10.2026): Einstieg ab 52 % statt 60 % plus ~15 % Übungstrades ab 45 % (Tag „lern: …“); ki_trader übt stärker (eigene practice-Werte).",

@@ -35,7 +35,7 @@ SPOT = "https://api.binance.com"
 FUTURES = "https://fapi.binance.com"
 BACKFILL_FROM = "2022-01-01"
 FLOW_FEATURES = ["flow_taker_buy", "flow_taker_buy_4h", "flow_funding", "flow_ls_accounts", "flow_ls_top",
-                 "flow_oi_change_4h"]
+                 "flow_oi_change_4h", "flow_pro_net_24h"]
 FLOW_TEXT = {
     "flow_taker_buy": "Kaufdruck (Anteil aggressiver Käufe, letzte Kerze)",
     "flow_taker_buy_4h": "Kaufdruck der letzten 4 Stunden",
@@ -43,6 +43,7 @@ FLOW_TEXT = {
     "flow_ls_accounts": "Long/Short-Verhältnis aller Trader",
     "flow_ls_top": "Long/Short-Verhältnis der Top-Trader",
     "flow_oi_change_4h": "Veränderung der offenen Positionen (4 h)",
+    "flow_pro_net_24h": "Profi-Trader (Hyperliquid): Long- minus Short-Eröffnungen 24 h",
 }
 KINDS = ("taker", "funding", "ratio", "depth", "news", "alpha")
 FNG_URL = "https://api.alternative.me/fng/"
@@ -52,7 +53,8 @@ CONTEXT_FEATURES = ["ctx_fear_greed", "ctx_fear_greed_chg_7d", "ctx_vix", "ctx_v
                     "ctx_dollar_chg_20d", "ctx_spx_ret_5d", "ctx_spx_ret_20d", "ctx_ndx_ret_5d", "ctx_ndx_ret_20d",
                     "ctx_dvol_btc", "ctx_dvol_btc_chg_5d", "ctx_dvol_eth", "ctx_stable_chg_7d", "ctx_stable_chg_30d",
                     "ctx_btc_active_chg_7d", "ctx_btc_mvrv", "ctx_eth_active_chg_7d",
-                    "ctx_wiki_btc_chg_7d", "ctx_wiki_eth_chg_7d", "ctx_wiki_crypto_chg_7d"]
+                    "ctx_wiki_btc_chg_7d", "ctx_wiki_eth_chg_7d", "ctx_wiki_crypto_chg_7d",
+                    "ctx_cot_btc_lev_net", "ctx_cot_btc_am_net", "ctx_cot_eth_lev_net"]
 WIKI_URL = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/{page}/daily/{a}/{b}"
 WIKI_PAGES = {"Bitcoin": "wiki_btc", "Ethereum": "wiki_eth", "Cryptocurrency": "wiki_crypto"}
 # Wikimedia verlangt einen aussagekräftigen User-Agent mit Kontakt; hier das (öffentliche) Projekt-Repo, keine E-Mail.
@@ -75,7 +77,23 @@ CONTEXT_TEXT = {
     "ctx_wiki_btc_chg_7d": "Aufmerksamkeit: Wikipedia-Aufrufe „Bitcoin“ 7 Tage",
     "ctx_wiki_eth_chg_7d": "Aufmerksamkeit: Wikipedia-Aufrufe „Ethereum“ 7 Tage",
     "ctx_wiki_crypto_chg_7d": "Aufmerksamkeit: Wikipedia-Aufrufe „Cryptocurrency“ 7 Tage",
+    "ctx_cot_btc_lev_net": "Hedgefonds netto in BTC-Futures (CFTC, wöchentlich)",
+    "ctx_cot_btc_am_net": "Vermögensverwalter netto in BTC-Futures (CFTC, wöchentlich)",
+    "ctx_cot_eth_lev_net": "Hedgefonds netto in ETH-Futures (CFTC, wöchentlich)",
 }
+# Profi-Daten (Burak 25.10.2026, „Beides einbauen“): öffentlich und kostenlos, ohne Key.
+# CFTC „Traders in Financial Futures“ (Socrata-Schnittstelle), CME Bitcoin 133741 / Ether 146021. Stand dienstags,
+# veröffentlicht freitags -> 4 Tage Verzug. Datensatz-Kennung und Spaltennamen aus dem Gedächtnis, Unsicher: auf dem PC
+# prüfen (Fehler landen nur in der Ausgabe, nie im Handel).
+COT_URL = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"
+COT_MARKETS = {"133741": "btc", "146021": "eth"}
+# Hyperliquid: öffentliche Rangliste + Trades je Wallet. Nur Wallets, die im Monat UND insgesamt Gewinn machen und
+# nicht vorwiegend Market Making betreiben (Monatsumsatz ≤ 50 × Kontowert). Test 25.10.: Historie nur ~2.000 Trades je
+# Wallet, deshalb wird ab jetzt laufend aufgezeichnet; Nutzungsbedingungen ungeprüft (Seite gesperrt).
+HL_LEADERBOARD = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
+HL_INFO = "https://api.hyperliquid.xyz/info"
+HL_WALLETS = 40
+HL_MAX_TURNOVER = 50
 ALPHA_FEATURES = ["alpha_ts_klen", "alpha_x_illiq20", "alpha_x_vol20", "alpha_x_beta60", "alpha_x_high60",
                   "alpha_ts_corr20"]  # = kitb.alphas.LIVE, Rang unter allen Lern-Coins am Vortag
 ALL_FEATURES = FLOW_FEATURES + CONTEXT_FEATURES + ALPHA_FEATURES
@@ -370,6 +388,7 @@ def update_context(user_data: Path | None = None, get: Callable = _get, get_text
     for name, fn in (("dvol", lambda: update_dvol(user_data, get)),
                      ("alphas", lambda: update_alphas(pairs, user_data, get) if pairs else 0), ("stablecoins", lambda: update_stablecoins(user_data, get)),
                      ("onchain", lambda: update_onchain(user_data, get)),
+                     ("cot", lambda: update_cot(user_data, get)),
                      ("wiki", lambda: update_wiki(user_data, None if get is _get else get))):
         try:
             out = fn()
@@ -482,6 +501,111 @@ def update_onchain(user_data: Path | None = None, get: Callable = _get) -> dict[
     return res
 
 
+def update_cot(user_data: Path | None = None, get: Callable = _get) -> dict[str, Any]:
+    """CFTC-Wochenbericht: Netto-Position (Long − Short, Anteil an allen offenen Kontrakten) von Hedgefonds („Leveraged
+    Funds“) und Vermögensverwaltern in CME-Bitcoin- und Ether-Futures. Gespeichert je Gruppe als CONTEXT/cot_<coin>_<gruppe>."""
+    res: dict[str, Any] = {}
+    for code, coin in COT_MARKETS.items():
+        rows = get(COT_URL, {"cftc_contract_market_code": code, "$limit": 2000,
+                             "$order": "report_date_as_yyyy_mm_dd"})
+        raw = pd.DataFrame(rows)
+        if raw.empty:
+            res[f"cot_{coin}"] = "Fehler: keine Daten"
+            continue
+        date = pd.to_datetime(raw["report_date_as_yyyy_mm_dd"], utc=True)
+        oi = pd.to_numeric(raw.get("open_interest_all"), errors="coerce").replace(0, np.nan)
+        for grp, pre in (("lev", "lev_money_positions"), ("am", "asset_mgr_positions")):
+            if f"{pre}_long" not in raw:
+                res[f"cot_{coin}_{grp}"] = "Fehler: Spalte fehlt"
+                continue
+            net = (pd.to_numeric(raw[f"{pre}_long"], errors="coerce")
+                   - pd.to_numeric(raw[f"{pre}_short"], errors="coerce")) / oi
+            res[f"cot_{coin}_{grp}"] = _store("CONTEXT", f"cot_{coin}_{grp}",
+                                              pd.DataFrame({"date": date, "value": net}).dropna(), user_data)
+    return res
+
+
+def _post(url: str, body: dict[str, Any]) -> Any:
+    import requests
+
+    r = requests.post(url, json=body, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+def pro_wallets(board: dict[str, Any], n: int = HL_WALLETS) -> list[str]:
+    """Profis aus der Hyperliquid-Rangliste: Monat UND Gesamt im Gewinn, kein reines Market Making."""
+    out = []
+    for row in board.get("leaderboardRows", []):
+        perf = {k: v for k, v in row.get("windowPerformances", [])}
+        try:
+            value = float(row.get("accountValue") or 0)
+            month, total = perf.get("month", {}), perf.get("allTime", {})
+            if value <= 0 or float(month.get("pnl", 0)) <= 0 or float(total.get("pnl", 0)) <= 0:
+                continue
+            if float(month.get("vlm", 0)) > HL_MAX_TURNOVER * value:
+                continue
+            out.append((float(total["pnl"]), row["ethAddress"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return [a for _, a in sorted(out, reverse=True)[:n]]
+
+
+def update_pro_trades(pairs: list[str], user_data: Path | None = None, get: Callable = _get,
+                      post: Callable = _post, wallets: list[str] | None = None) -> int:
+    """Eröffnungen der Profi-Wallets in unseren Coins (Long/Short) anhängen: CONTEXT/pro_trades (je Trade eine Zeile)."""
+    coins = {p.split("/")[0]: p for p in pairs}
+    if wallets is None:
+        wallets = pro_wallets(get(HL_LEADERBOARD, {}))
+    rows = []
+    for w in wallets:
+        for f in post(HL_INFO, {"type": "userFills", "user": w}) or []:
+            d = str(f.get("dir", ""))
+            if f.get("coin") in coins and d.startswith("Open"):
+                rows.append({"date": pd.Timestamp(int(f["time"]), unit="ms", tz="UTC"), "wallet": w,
+                             "coin": f["coin"], "side": 1 if "Long" in d else -1,
+                             "usd": float(f.get("px", 0)) * float(f.get("sz", 0))})
+    if not rows:
+        return 0
+    p = _path("CONTEXT", "pro_trades", user_data)
+    old = load("CONTEXT", "pro_trades", user_data)
+    new = pd.DataFrame(rows)
+    df = (pd.concat([old, new]) if not old.empty else new).drop_duplicates(["date", "wallet", "coin", "side"])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    df.sort_values("date").reset_index(drop=True).to_parquet(tmp, index=False)
+    for i in range(5):
+        try:
+            os.replace(tmp, p)
+            break
+        except PermissionError:  # Windows-Bind-Mount: Leser hält die Datei kurz offen
+            time.sleep(0.5 * (i + 1))
+    return len(df) - len(old)
+
+
+def pro_net(pair: str, dates: pd.Series, user_data: Path | None = None) -> pd.Series:
+    """Je Kerze: (Long- minus Short-Eröffnungen der Profis im Coin, letzte 24 h) / alle Eröffnungen; ohne Daten NaN."""
+    known = pd.Series(pd.to_datetime(dates, utc=True)).dt.tz_localize(None).astype("datetime64[ns]")
+    out = pd.Series(np.nan, index=range(len(known)))
+    df = load("CONTEXT", "pro_trades", user_data)
+    if df.empty:
+        return out
+    df = df[df["coin"] == pair.split("/")[0]]
+    start = pd.to_datetime(load("CONTEXT", "pro_trades", user_data)["date"], utc=True).min().tz_localize(None)
+    t = pd.to_datetime(df["date"], utc=True).dt.tz_localize(None).astype("datetime64[ns]").to_numpy()
+    side = df["side"].to_numpy(float)
+    order = np.argsort(t)
+    t, side = t[order], side[order]
+    cum, cnt = np.r_[0.0, np.cumsum(side)], np.arange(len(t) + 1)
+    hi = np.searchsorted(t, known.to_numpy(), side="left")  # nur vor Kerzenbeginn bekannt
+    lo = np.searchsorted(t, (known - pd.Timedelta(hours=24)).to_numpy(), side="left")
+    n = cnt[hi] - cnt[lo]
+    val = np.where(n > 0, (cum[hi] - cum[lo]) / np.maximum(n, 1), 0.0)
+    # vor Beginn der Aufzeichnung ist „keine Profi-Eröffnung“ unbekannt, nicht 0
+    val = np.where(known.to_numpy() >= (start + pd.Timedelta(hours=24)).to_datetime64(), val, np.nan)
+    return pd.Series(val, index=out.index)
+
+
 def context_features(dates: pd.Series, user_data: Path | None = None) -> pd.DataFrame:
     """Gesamtmarkt je Kerze. Tageswerte gelten erst ab dem Folgetag (FRED: Schlusskurs des Vortags, Unsicher wann genau
     veröffentlicht -> 36 h Puffer; Fear & Greed: Wert des Tages ab 1 h nach Veröffentlichung)."""
@@ -524,6 +648,10 @@ def context_features(dates: pd.Series, user_data: Path | None = None) -> pd.Data
     series("btc_active", day, {"ctx_btc_active_chg_7d": lambda v: v.rolling(7).mean().pct_change(7, fill_method=None)})
     series("btc_mvrv", day, {"ctx_btc_mvrv": lambda v: v - 1})
     series("eth_active", day, {"ctx_eth_active_chg_7d": lambda v: v.rolling(7).mean().pct_change(7, fill_method=None)})
+    cot = pd.Timedelta(days=4)  # Stand dienstags, veröffentlicht freitags
+    for kind, col in (("cot_btc_lev", "ctx_cot_btc_lev_net"), ("cot_btc_am", "ctx_cot_btc_am_net"),
+                      ("cot_eth_lev", "ctx_cot_eth_lev_net")):
+        series(kind, cot, {col: lambda v: v}, max_age=pd.Timedelta(days=14))
     for kind, col in (("wiki_btc", "ctx_wiki_btc_chg_7d"), ("wiki_eth", "ctx_wiki_eth_chg_7d"),
                       ("wiki_crypto", "ctx_wiki_crypto_chg_7d")):
         series(kind, day, {col: lambda v: np.log(v.rolling(7).mean() / v.rolling(7).mean().shift(7))})
@@ -609,13 +737,15 @@ def features(pair: str, dates: pd.Series, minutes: int, user_data: Path | None =
         ready = pd.to_datetime(ra["date"], utc=True) + pd.Timedelta(minutes=5)
         cols = ["flow_ls_accounts", "flow_ls_top", "flow_oi_change_4h"]
         out[cols] = asof(ra, ready, cols, pd.Timedelta(hours=2))
+    out["flow_pro_net_24h"] = pro_net(pair, dates, user_data).to_numpy()
     return out.astype(float)
 
 
 def loop(pairs: list[str], user_data: Path | None = None, once: bool = False) -> None:
     """Dienst ``market-flow``: jede Minute Kaufdruck + Orderbuch, alle 5 Minuten Terminmarkt, alle 30 Min. Schlagzeilen,
     alle 6 h Gesamtmarkt."""
-    last_slow = last_ctx = last_news = pd.Timestamp(0, tz="UTC")
+    last_slow = last_ctx = last_news = last_pro = last_board = pd.Timestamp(0, tz="UTC")
+    board: list[str] = []
     while True:
         now = pd.Timestamp.now(tz="UTC")
         slow = now - last_slow >= pd.Timedelta(minutes=5)
@@ -631,6 +761,15 @@ def loop(pairs: list[str], user_data: Path | None = None, once: bool = False) ->
         if now - last_ctx >= pd.Timedelta(hours=6):
             res["Gesamtmarkt"] = update_context(user_data, pairs=pairs)
             last_ctx = now
+        if now - last_pro >= pd.Timedelta(minutes=15):
+            try:
+                if now - last_board >= pd.Timedelta(hours=24) or not board:
+                    board[:] = pro_wallets(_get(HL_LEADERBOARD, {}))
+                    last_board = now
+                res["Profis"] = {"pro_trades": update_pro_trades(pairs, user_data, wallets=board)}
+            except Exception as e:  # noqa: BLE001
+                res["Profis"] = {"pro_trades": f"Fehler: {str(e)[:120]}"}
+            last_pro = now
         if now - last_news >= pd.Timedelta(minutes=30):
             for pair in pairs:
                 try:

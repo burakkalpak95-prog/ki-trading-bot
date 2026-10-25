@@ -40,6 +40,10 @@ def fake_get(url, params):
     if url == market_flow.COINMETRICS_URL:
         return {"data": [{"asset": params["assets"], "time": f"{d:%Y-%m-%d}T00:00:00.000000000Z",
                           **{m: str(1000 + i) for m in params["metrics"].split(",")}} for i, d in enumerate(days)]}
+    if url == market_flow.COT_URL:
+        return [{"report_date_as_yyyy_mm_dd": f"{d:%Y-%m-%d}T00:00:00.000", "open_interest_all": "1000",
+                 "lev_money_positions_long": "100", "lev_money_positions_short": "300",
+                 "asset_mgr_positions_long": "200", "asset_mgr_positions_short": "100"} for d in days[::7]]
     if url.startswith("https://wikimedia.org/"):
         return {"items": [{"timestamp": f"{d:%Y%m%d}00", "views": 1000 + 10 * i} for i, d in enumerate(days)]}
     raise AssertionError(url)
@@ -252,3 +256,44 @@ def test_dollar_index_weekly_publication_still_used(tmp_path):
     c = market_flow.context_features(pd.Series([T0]), ud)
     assert c["ctx_dollar_chg_20d"].notna().all()
     assert c["ctx_vix"].isna().all()  # tägliche Reihen: 9 Tage alt bleibt veraltet
+
+
+def test_cot_net_positions_weekly(tmp_path):
+    """Burak 25.10.: Profi-Daten. CFTC-Wochenbericht -> Netto-Anteil Hedgefonds/Vermögensverwalter, erst ab Freitag."""
+    ud = tmp_path / "ud"
+    tue = [T0 - pd.Timedelta(days=7 * k + 1) for k in range(10)]
+
+    def fake_get(url, params):
+        assert url == market_flow.COT_URL
+        return [{"report_date_as_yyyy_mm_dd": d.strftime("%Y-%m-%dT00:00:00.000"), "open_interest_all": "1000",
+                 "lev_money_positions_long": "100", "lev_money_positions_short": "400",
+                 "asset_mgr_positions_long": "300", "asset_mgr_positions_short": "100"} for d in tue]
+
+    res = market_flow.update_cot(ud, get=fake_get)
+    assert res["cot_btc_lev"] == 10 and res["cot_eth_am"] == 10
+    c = market_flow.context_features(pd.Series([T0]), ud)
+    assert np.isclose(c["ctx_cot_btc_lev_net"].iloc[0], -0.3) and np.isclose(c["ctx_cot_btc_am_net"].iloc[0], 0.2)
+
+
+def test_pro_traders_filtered_and_without_lookahead(tmp_path):
+    ud = tmp_path / "ud"
+    perf = lambda m, t, v: [["day", {"pnl": "1"}], ["month", {"pnl": str(m), "vlm": str(v)}], ["allTime", {"pnl": str(t)}]]
+    board = {"leaderboardRows": [
+        {"ethAddress": "0xpro", "accountValue": "1000", "windowPerformances": perf(50, 900, 10_000)},
+        {"ethAddress": "0xmm", "accountValue": "1000", "windowPerformances": perf(50, 5000, 10_000_000)},
+        {"ethAddress": "0xlose", "accountValue": "1000", "windowPerformances": perf(-5, 900, 100)}]}
+    assert market_flow.pro_wallets(board) == ["0xpro"]
+    t1, t2 = T0 + pd.Timedelta(hours=30), T0 + pd.Timedelta(hours=40)
+    fills = [{"coin": "BTC", "dir": "Open Long", "time": int(t1.timestamp() * 1000), "px": "100", "sz": "1"},
+             {"coin": "BTC", "dir": "Open Short", "time": int(t2.timestamp() * 1000), "px": "100", "sz": "1"},
+             {"coin": "BTC", "dir": "Close Long", "time": int(t2.timestamp() * 1000), "px": "100", "sz": "1"},
+             {"coin": "WLD", "dir": "Open Long", "time": int(t2.timestamp() * 1000), "px": "1", "sz": "1"},
+             {"coin": "ETH", "dir": "Open Long", "time": int(T0.timestamp() * 1000), "px": "1", "sz": "1"}]
+    n = market_flow.update_pro_trades(["BTC/USDT", "ETH/USDT"], ud, post=lambda u, b: fills, wallets=["0xpro"])
+    assert n == 3
+    assert market_flow.update_pro_trades(["BTC/USDT"], ud, post=lambda u, b: fills, wallets=["0xpro"]) == 0
+    v = market_flow.pro_net("BTC/USDT", pd.Series([T0 + pd.Timedelta(hours=12), t1, t1 + pd.Timedelta(hours=1),
+                                                   t2 + pd.Timedelta(hours=1)]), ud)
+    assert np.isnan(v[0])                  # vor 24 h Aufzeichnung: unbekannt
+    assert v[1] == 0.0                     # Eröffnung genau zum Kerzenbeginn ist noch nicht bekannt
+    assert v[2] == 1.0 and v[3] == 0.0     # 1 Long, dann 1 Long + 1 Short

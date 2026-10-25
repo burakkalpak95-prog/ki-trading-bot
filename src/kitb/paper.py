@@ -165,6 +165,8 @@ def _build_rule_config(paper_id: str, reg: Registry, project: dict[str, Any],
         # ... außer bei Sammlern mit eigenem Intervall (z. B. 15m: dieselbe Regel, häufiger geprüft)
         cfg["timeframe"] = project["paper_strategies"][paper_id]["timeframe"]
     cfg["kitb_practice"] = project["paper_strategies"][paper_id].get("practice", {})
+    # Stil-KIs (Burak 25.10.2026): der Stil schlägt vor, die KI entscheidet aus dem gemeinsamen Gedächtnis
+    cfg["kitb_style_ai"] = cfg["kitb_mode"] in project.get("paper_learning", {}).get("style_ai_modes", [])
     pairs = project["allowed_pairs"]
     if cfg["kitb_mode"] in ("explore", "learning"):
         pairs = _use_learning_pairs(cfg, project)
