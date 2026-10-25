@@ -289,9 +289,9 @@ def test_pro_traders_filtered_and_without_lookahead(tmp_path):
              {"coin": "BTC", "dir": "Close Long", "time": int(t2.timestamp() * 1000), "px": "100", "sz": "1"},
              {"coin": "WLD", "dir": "Open Long", "time": int(t2.timestamp() * 1000), "px": "1", "sz": "1"},
              {"coin": "ETH", "dir": "Open Long", "time": int(T0.timestamp() * 1000), "px": "1", "sz": "1"}]
-    n = market_flow.update_pro_trades(["BTC/USDT", "ETH/USDT"], ud, post=lambda u, b: fills, wallets=["0xpro"])
+    n = market_flow.update_pro_trades(["BTC/USDT", "ETH/USDT"], ud, post=lambda u, b: fills, wallets=["0xpro"], sleep=0)
     assert n == 3
-    assert market_flow.update_pro_trades(["BTC/USDT"], ud, post=lambda u, b: fills, wallets=["0xpro"]) == 0
+    assert market_flow.update_pro_trades(["BTC/USDT"], ud, post=lambda u, b: fills, wallets=["0xpro"], sleep=0) == 0
     v = market_flow.pro_net("BTC/USDT", pd.Series([T0 + pd.Timedelta(hours=12), t1, t1 + pd.Timedelta(hours=1),
                                                    t2 + pd.Timedelta(hours=1)]), ud)
     assert np.isnan(v[0])                  # vor 24 h Aufzeichnung: unbekannt

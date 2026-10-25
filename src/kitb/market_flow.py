@@ -552,14 +552,23 @@ def pro_wallets(board: dict[str, Any], n: int = HL_WALLETS) -> list[str]:
 
 
 def update_pro_trades(pairs: list[str], user_data: Path | None = None, get: Callable = _get,
-                      post: Callable = _post, wallets: list[str] | None = None) -> int:
+                      post: Callable = _post, wallets: list[str] | None = None, sleep: float = 1.2) -> int:
     """Eröffnungen der Profi-Wallets in unseren Coins (Long/Short) anhängen: CONTEXT/pro_trades (je Trade eine Zeile)."""
     coins = {p.split("/")[0]: p for p in pairs}
     if wallets is None:
         wallets = pro_wallets(get(HL_LEADERBOARD, {}))
     rows = []
     for w in wallets:
-        for f in post(HL_INFO, {"type": "userFills", "user": w}) or []:
+        fills = None
+        for i in range(3):
+            try:
+                fills = post(HL_INFO, {"type": "userFills", "user": w})
+                break
+            except Exception as e:  # noqa: BLE001 – 429 bei zu schnellen Abfragen: warten, dann nächste Wallet
+                log.warning("pro_trades %s…: %s", w[:8], e)
+                time.sleep(sleep * 10 * (i + 1))
+        time.sleep(sleep)  # Hyperliquid: ~1200 Gewicht/min je IP, userFills zählt 20
+        for f in fills or []:
             d = str(f.get("dir", ""))
             if f.get("coin") in coins and d.startswith("Open"):
                 rows.append({"date": pd.Timestamp(int(f["time"]), unit="ms", tz="UTC"), "wallet": w,
