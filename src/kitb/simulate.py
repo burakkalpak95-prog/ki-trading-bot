@@ -196,9 +196,22 @@ def build(*, pairs: list[str] | None = None, datadir: Path | None = None, user_d
     num = table.select_dtypes("float64").columns
     table[num] = table[num].astype("float32")  # halber Speicher
     _atomic_parquet(table, d / "sim_table.parquet")
-    # Runde 0: zufällig ausprobieren (Haltedauer/Stufe gleichverteilt), damit sofort Lerndaten da sind
-    sim = _round_trades(table, rng.choice(HOLD_HOURS, len(table)), rng.choice(STOPS, len(table)), "sim")
-    _atomic_parquet(sim, d / "simulated_trades.parquet")
+    # Bereits gespielte Runden bleiben erhalten (Gedächtnis und Rundenzähler, Prüfbericht 25.10., Punkt 5a). Nur ohne
+    # Gedächtnis gibt es Runde 0: zufällig ausprobieren (Haltedauer/Stufe gleichverteilt), damit sofort Lerndaten da sind
+    mem_file = d / "simulated_trades.parquet"
+    played = pd.DataFrame()
+    if mem_file.exists():
+        try:
+            old = pd.read_parquet(mem_file)
+            if "round" in old:
+                played = old[old["round"].notna()]
+        except Exception:  # noqa: BLE001 – unlesbare Datei: neu anfangen
+            log.exception("Sim-Gedächtnis nicht lesbar")
+    if not played.empty:
+        sim = played.tail(MEMORY_CAP).reset_index(drop=True)
+    else:
+        sim = _round_trades(table, rng.choice(HOLD_HOURS, len(table)), rng.choice(STOPS, len(table)), "sim")
+        _atomic_parquet(sim, mem_file)
     return {"trades": len(sim), "krypto": int((table["asset"] == "krypto").sum()),
             "aktien": int((table["asset"] == "aktie").sum()), "krypto_15m": int((table["asset"] == "krypto15").sum()),
             "cost_round_trip": cost,

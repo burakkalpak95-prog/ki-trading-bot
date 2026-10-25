@@ -194,3 +194,22 @@ def test_net_goal_takes_only_trades_expected_above_fees(monkeypatch):
 def test_net_goal_stays_off_without_edge():
     s = sl.train(_trades(300, signal=False))
     assert not s.get("net_active") and s.get("net_model") is None
+
+
+def test_new_sim_weight_or_content_refits(monkeypatch):
+    """Prüfbericht 25.10., Punkt 3: gleiche Zeilenzahl, aber neues Gewicht bzw. neue Sims -> neu anpassen."""
+    from kitb import simulate
+
+    t = _trades(300)
+    monkeypatch.setattr(sl, "own_trades", lambda ki, ud=None: t)
+    calls = []
+    real_train = sl.train
+    monkeypatch.setattr(sl, "train", lambda d: calls.append(1) or real_train(d))
+    sl._cache.clear()
+    monkeypatch.setattr(simulate, "weight", lambda ud=None: 0.5)
+    sl.state("ki_trader", sims=False)
+    sl.state("ki_trader", sims=False)
+    assert len(calls) == 1
+    monkeypatch.setattr(simulate, "weight", lambda ud=None: 1.0)
+    sl.state("ki_trader", sims=False)
+    assert len(calls) == 2

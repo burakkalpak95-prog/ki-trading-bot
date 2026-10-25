@@ -315,3 +315,18 @@ def test_15m_collectors_trade_more_often(reg, tmp_path):
     _, c1 = paper.build_paper_config("trend_d1", reg, tmp_path / "ud") if strategy_approval.approve(
         reg, "trend_d1", by="Burak", reason="t") or True else (None, None)
     assert "timeframe" not in c1
+
+
+def test_risk_state_keeps_every_bot(tmp_path):
+    """Prüfbericht 25.10., Punkt 8: gleichzeitige Meldungen überschrieben sich gegenseitig."""
+    import json
+    from concurrent.futures import ProcessPoolExecutor
+
+    from kitb.risk import write_state
+
+    bots = [f"bot{i}" for i in range(8)]
+    with ProcessPoolExecutor(4) as ex:
+        list(ex.map(write_state, bots * 5, [{"equity": 1}] * 40, [tmp_path] * 40))
+    write_state("bot0", {"equity": 2}, tmp_path)
+    state = json.loads((tmp_path / "paper" / "risk_state.json").read_text(encoding="utf-8"))
+    assert set(state) == set(bots) and state["bot0"]["equity"] == 2

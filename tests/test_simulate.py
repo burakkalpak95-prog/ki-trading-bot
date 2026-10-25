@@ -195,3 +195,18 @@ def test_paused_simulation_probes_new_kind(tmp_path, monkeypatch):
     os.utime(tab, (old, old))
     simulate._set_pause(d, 100, "Test")  # jetzt mit krypto15 pausiert -> kein Probelauf mehr
     assert not simulate._new_kinds_while_paused(d, simulate._pause_state(d), tmp_path)
+
+
+def test_rebuild_keeps_played_rounds(tmp_path):
+    """Prüfbericht 25.10., Punkt 5a: der Tabellen-Neubau warf Gedächtnis und Rundenzähler weg."""
+    from kitb.data.storage import store_ohlcv
+
+    store_ohlcv(tmp_path / "data", "ZZZ/USDT", "1h", _candles(800))
+    kw = dict(pairs=["ZZZ/USDT"], datadir=tmp_path / "data", user_data=tmp_path, stocks=False, get=False)
+    simulate.build(**kw)
+    f = simulate.sim_dir(tmp_path) / "simulated_trades.parquet"
+    mem = pd.read_parquet(f).head(50).assign(round=7)
+    mem.to_parquet(f, index=False)
+    simulate.build(**kw)
+    after = pd.read_parquet(f)
+    assert len(after) == 50 and after["round"].max() == 7

@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import signal
+import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -119,14 +120,34 @@ class RiskManager:
 
 
 def write_state(bot: str, payload: dict[str, Any], user_data_dir: Path | None = None) -> None:
-    p = (user_data_dir or paths.USER_DATA) / "paper" / "risk_state.json"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        current = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-    except ValueError:
-        current = {}
-    current[bot] = {**payload, "updated_at": datetime.now(UTC).isoformat()}
-    p.write_text(json.dumps(current, indent=2, default=str), encoding="utf-8")
+    """Je Bot eine eigene Datei (atomar), daraus wird risk_state.json zusammengesetzt. Vorher lasen und schrieben alle
+    Bots dieselbe Datei, gleichzeitige Meldungen gingen verloren (Prüfbericht 25.10., Punkt 8: 15 von 16 Einträgen)."""
+    base = (user_data_dir or paths.USER_DATA) / "paper"
+    d = base / "risk_state"
+    d.mkdir(parents=True, exist_ok=True)
+    _atomic_write(d / f"{bot}.json", {**payload, "updated_at": datetime.now(UTC).isoformat()})
+    try:  # Einträge aus der Zeit vor den Einzeldateien bleiben, bis der Bot selbst wieder meldet
+        merged: dict[str, Any] = json.loads((base / "risk_state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        merged = {}
+    for f in sorted(d.glob("*.json")):
+        try:
+            merged[f.stem] = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+    _atomic_write(base / "risk_state.json", merged)
+
+
+def _atomic_write(p: Path, data: Any) -> None:
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    for i in range(5):
+        try:
+            os.replace(tmp, p)
+            return
+        except PermissionError:  # Windows-Bind-Mount: Leser hält die Datei kurz offen
+            time.sleep(0.2 * (i + 1))
+    tmp.unlink(missing_ok=True)
 
 
 def _refill_enabled() -> bool:

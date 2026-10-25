@@ -262,7 +262,10 @@ def state(ki: str, user_data: Path | None = None, sims: bool = True) -> dict[str
         sim = sim[pd.to_datetime(sim["close_date"], utc=True, format="ISO8601") < pd.Timestamp.now(tz="UTC")]
     real = t
     t = pd.concat([sim, t], ignore_index=True) if not sim.empty else t
-    key = (ki, str(user_data), sims, len(t), None if t.empty else str(t["close_date"].iloc[-1]))
+    # Stand und Gewicht der Simulationen gehören in den Schlüssel: neue Sim-Inhalte gleicher Länge oder ein neues Gewicht
+    # müssen neu angepasst werden (Prüfbericht 25.10., Punkt 3)
+    key = (ki, str(user_data), sims, len(t), None if t.empty else str(t["close_date"].iloc[-1]),
+           str(_SIM.get("at")) if sims else None, SIM_SHARE)
     if key not in _cache:
         _cache.clear()
         if not sim.empty:  # die KI stuft jede Simulation selbst als mehr oder weniger brauchbar ein
