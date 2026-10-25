@@ -1,7 +1,7 @@
 """KI 2 – Belohnungslerner (Contextual Bandit mit Thompson Sampling, Burak 23.10.2026).
 
 Statt Kursmuster vorherzusagen, lernt KI 2 direkt aus Belohnung und Strafe: Für jede Marktlage wählt sie eine
-Aktion (nicht handeln oder kaufen und 1 h / 4 h / 12 h halten) und bekommt als Belohnung den tatsächlichen Gewinn
+Aktion (nicht handeln oder kaufen und 1 h / 2 h / 4 h halten; bis 25.10.2026: 1/4/12 h) und bekommt als Belohnung den tatsächlichen Gewinn
 nach Gebühren in Prozent. Je Aktion schätzt eine Bayes'sche lineare Regression den erwarteten Gewinn samt
 Unsicherheit. Thompson Sampling zieht aus dieser Unsicherheit – unsichere Aktionen werden so von selbst ausprobiert
 (Lern-Trades), sichere gute Aktionen genutzt (Signal-Trades). Gelernt wird aus dem gesamten gemeinsamen Gedächtnis,
@@ -16,7 +16,9 @@ import pandas as pd
 
 from kitb.shared_memory import SNAPSHOT_FEATURES
 
-ARMS = {"1h": 1.0, "4h": 4.0, "12h": 12.0}
+# 25.10.2026 (Burak): 12 h ersetzt durch 2 h – 12-h-Trades lagen bei Ø −1,65 % (37 echte Trades, Treffer 11 %), wie bei
+# Bot A/B lernt die KI nur noch zwischen kurzen Haltedauern. Sie wählt weiterhin selbst.
+ARMS = {"1h": 1.0, "2h": 2.0, "4h": 4.0}
 PRIOR_PRECISION = 1.0  # Regularisierung: ohne Daten erwartet die KI 0 % (weder Gewinn noch Verlust)
 MIN_NOISE = 0.25       # Untergrenze der Streuung (in %-Punkten²), verhindert Übermut bei wenigen Trades
 
@@ -84,6 +86,10 @@ def fit(memory: pd.DataFrame) -> RewardModel:
     iqr = (f.quantile(0.75) - f.quantile(0.25)).replace(0, np.nan).fillna(1.0).to_numpy()
     m.scale = np.where(np.isfinite(iqr) & (iqr > 0), iqr, 1.0)
     mem["arm"] = [a if a in ARMS else arm_for_hold(h) for a, h in zip(mem["action"] if "action" in mem else [None] * len(mem), mem["hold_hours"])]
+    # Trades, deren Haltedauer zu keiner Aktion passt (z. B. alte 12-h-Trades), würden die 4-h-Schätzung verfälschen
+    hold = pd.to_numeric(mem["hold_hours"], errors="coerce")
+    near = (hold <= 2 * mem["arm"].map(ARMS)) & (hold >= mem["arm"].map(ARMS) / 2)
+    mem = mem[near | (hold.isna() & mem["arm"].isin(list(ARMS)))]
     for arm in ARMS:
         part = mem[mem["arm"] == arm]
         if part.empty:

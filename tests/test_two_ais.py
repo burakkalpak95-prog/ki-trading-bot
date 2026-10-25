@@ -55,15 +55,15 @@ def test_reward_learner_learns_from_rewards_and_explores():
         f = {c: rng.normal() for c in shared_memory.SNAPSHOT_FEATURES}
         arm = str(rng.choice(list(reward_learner.ARMS)))
         good = f["ret_24h"] > 0
-        reward = (0.01 if good else -0.01) if arm == "12h" else -0.002
+        reward = (0.01 if good else -0.01) if arm == "4h" else -0.002
         rows.append({**f, "profit_pct": reward + rng.normal(0, 0.002), "hold_hours": reward_learner.ARMS[arm],
                      "action": arm})
     m = reward_learner.fit(pd.DataFrame(rows))
     up = {c: 0.0 for c in shared_memory.SNAPSHOT_FEATURES} | {"ret_24h": 2.0}
     down = {c: 0.0 for c in shared_memory.SNAPSHOT_FEATURES} | {"ret_24h": -2.0}
-    assert max(m.expected(up), key=m.expected(up).get) == "12h" and m.expected(down)["12h"] < 0
+    assert max(m.expected(up), key=m.expected(up).get) == "4h" and m.expected(down)["4h"] < 0
     picks = [reward_learner.choose(m, up, np.random.default_rng(i), epsilon=0.0) for i in range(50)]
-    assert sum(p["arm"] == "12h" and p["kind"] == "signal" for p in picks) > 40
+    assert sum(p["arm"] == "4h" and p["kind"] == "signal" for p in picks) > 40
     assert all(p["arm"] is None for p in
                [reward_learner.choose(m, down, np.random.default_rng(i), epsilon=0.0) for i in range(20)])
     rnd = [reward_learner.choose(m, down, np.random.default_rng(i), epsilon=1.0) for i in range(20)]
@@ -168,3 +168,14 @@ def test_reward_learner_reads_memory_with_trades_without_features(ud):
     shared_memory.sync(ud)
     m = reward_learner.fit(shared_memory.load(ud))  # darf an Zeilen ohne Merkmale nicht scheitern
     assert m.n_trades == 1 and "4h" in m.arms
+
+
+def test_reward_learner_ignores_holds_without_matching_action():
+    """25.10.: 12 h ist keine Aktion mehr – alte 12-h-Trades dürfen die 4-h-Schätzung nicht verfälschen."""
+    f = {c: 0.0 for c in shared_memory.SNAPSHOT_FEATURES}
+    rows = [{**f, "profit_pct": -0.02, "hold_hours": 12.0, "action": "12h"}] * 50 + \
+           [{**f, "profit_pct": 0.004, "hold_hours": 4.0, "action": "4h"}] * 50 + \
+           [{**f, "profit_pct": 0.001, "hold_hours": 1.75, "action": None}] * 50
+    m = reward_learner.fit(pd.DataFrame(rows))
+    assert set(reward_learner.ARMS) == {"1h", "2h", "4h"}
+    assert m.arms["4h"]["n"] == 50 and m.arms["2h"]["n"] == 50 and m.expected(f)["4h"] > 0
