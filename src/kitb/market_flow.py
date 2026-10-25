@@ -559,16 +559,19 @@ def update_pro_trades(pairs: list[str], user_data: Path | None = None, get: Call
         wallets = pro_wallets(get(HL_LEADERBOARD, {}))
     rows = []
     for w in wallets:
-        fills = None
-        for i in range(3):
+        fills, err = None, None
+        for i in range(2):
             try:
                 fills = post(HL_INFO, {"type": "userFills", "user": w})
                 break
-            except Exception as e:  # noqa: BLE001 – 429 bei zu schnellen Abfragen: warten, dann nächste Wallet
-                log.warning("pro_trades %s…: %s", w[:8], e)
-                time.sleep(sleep * 10 * (i + 1))
+            except Exception as e:  # noqa: BLE001 – 429 bei zu schnellen Abfragen: kurz warten, einmal wiederholen
+                err = e
+                time.sleep(sleep * 4)
         time.sleep(sleep)  # Hyperliquid: ~1200 Gewicht/min je IP, userFills zählt 20
-        for f in fills or []:
+        if fills is None:  # weiter gesperrt: Rest beim nächsten Durchlauf (alle 15 Min.), den Dienst nicht aufhalten
+            print(f"pro_trades: Abbruch nach {wallets.index(w)} von {len(wallets)} Wallets ({err})", flush=True)
+            break
+        for f in fills:
             d = str(f.get("dir", ""))
             if f.get("coin") in coins and d.startswith("Open"):
                 rows.append({"date": pd.Timestamp(int(f["time"]), unit="ms", tz="UTC"), "wallet": w,

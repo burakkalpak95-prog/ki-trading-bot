@@ -297,3 +297,14 @@ def test_pro_traders_filtered_and_without_lookahead(tmp_path):
     assert np.isnan(v[0])                  # vor 24 h Aufzeichnung: unbekannt
     assert v[1] == 0.0                     # Eröffnung genau zum Kerzenbeginn ist noch nicht bekannt
     assert v[2] == 1.0 and v[3] == 0.0     # 1 Long, dann 1 Long + 1 Short
+
+
+def test_pro_trades_stop_early_when_blocked(tmp_path):
+    calls = []
+
+    def post(u, b):
+        calls.append(b["user"])
+        raise RuntimeError("429 Too Many Requests")
+
+    assert market_flow.update_pro_trades(["BTC/USDT"], tmp_path, post=post, wallets=["a", "b", "c"], sleep=0) == 0
+    assert calls == ["a", "a"]
