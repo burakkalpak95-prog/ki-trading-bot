@@ -134,9 +134,17 @@ def _get(url: str, params: dict[str, Any]) -> Any:
 def _get_text(url: str, params: dict[str, Any]) -> str:
     import requests
 
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    return r.text
+    # FRED bremst manche Abruf-Kennungen und bricht gelegentlich ab (25.10.) -> schlichte Kennung, bis zu 3 Versuche
+    for i in range(3):
+        try:
+            r = requests.get(url, params=params, timeout=30, headers={"User-Agent": "kitb/1.0"})
+            r.raise_for_status()
+            return r.text
+        except requests.RequestException:
+            if i == 2:
+                raise
+            time.sleep(5 * (i + 1))
+    raise AssertionError("unerreichbar")
 
 
 def _ms(ts: pd.Timestamp) -> int:
@@ -481,7 +489,8 @@ def context_features(dates: pd.Series, user_data: Path | None = None) -> pd.Data
     key = pd.DataFrame({"t": idx["date"], "i": idx.index}).sort_values("t")
     out = pd.DataFrame(index=idx.index, columns=CONTEXT_FEATURES, dtype=float)
 
-    def series(kind: str, delay: pd.Timedelta, cols: dict[str, Callable[[pd.Series], pd.Series]]) -> None:
+    def series(kind: str, delay: pd.Timedelta, cols: dict[str, Callable[[pd.Series], pd.Series]],
+               max_age: pd.Timedelta = pd.Timedelta(days=5)) -> None:
         df = load("CONTEXT", kind, user_data)
         if df.empty:
             return
@@ -489,7 +498,7 @@ def context_features(dates: pd.Series, user_data: Path | None = None) -> pd.Data
         right = pd.DataFrame({"t": (pd.to_datetime(df["date"], utc=True) + delay).astype("datetime64[ns, UTC]")})
         for c, fn in cols.items():
             right[c] = fn(df["value"].astype(float)).to_numpy()
-        m = (pd.merge_asof(key, right, on="t", direction="backward", tolerance=pd.Timedelta(days=5))  # Wochenenden
+        m = (pd.merge_asof(key, right, on="t", direction="backward", tolerance=max_age)  # Wochenenden
              .set_index("i").reindex(idx.index))
         out[list(cols)] = m[list(cols)]
 
@@ -498,7 +507,10 @@ def context_features(dates: pd.Series, user_data: Path | None = None) -> pd.Data
     day = pd.Timedelta(hours=36)
     series("vix", day, {"ctx_vix": lambda v: v / 100, "ctx_vix_chg_5d": lambda v: v.pct_change(5, fill_method=None)})
     series("us10y", day, {"ctx_us10y_chg_20d": lambda v: v.diff(20)})
-    series("dollar", day, {"ctx_dollar_chg_20d": lambda v: v.pct_change(20, fill_method=None)})
+    # Dollar-Index (DTWEXBGS): FRED veröffentlicht ihn nur wöchentlich (montags bis Freitag der Vorwoche) -> der neueste
+    # Wert ist normal 3–10 Tage alt; mit 5 Tagen Grenze war das Merkmal fast immer leer.
+    series("dollar", day, {"ctx_dollar_chg_20d": lambda v: v.pct_change(20, fill_method=None)},
+           max_age=pd.Timedelta(days=14))
     series("spx", day, {"ctx_spx_ret_5d": lambda v: v.pct_change(5, fill_method=None),
                         "ctx_spx_ret_20d": lambda v: v.pct_change(20, fill_method=None)})
     series("ndx", day, {"ctx_ndx_ret_5d": lambda v: v.pct_change(5, fill_method=None),

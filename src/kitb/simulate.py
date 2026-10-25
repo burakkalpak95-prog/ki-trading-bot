@@ -354,6 +354,10 @@ def loop(user_data: Path | None = None, rounds: int | None = None, pause: float 
     while rounds is None or done < rounds:
         paused = _pause_state(d)
         if paused:  # die KI hat gemeldet: aus der Simulation ist nichts Brauchbares mehr zu holen
+            if _new_kinds_while_paused(d, paused, user_data):
+                (d / "sim_pause.json").unlink(missing_ok=True)
+                print("Simulation: Probelauf – neue Simulationsart in der Kurstabelle, die KI prüft sie", flush=True)
+                continue
             n_real = len(shared_memory.load(user_data))
             if n_real >= paused["echte_trades"] + RESUME_AFTER_REAL:
                 res = evaluate(user_data)
@@ -432,13 +436,34 @@ def _set_pause(d: Path, n_real: int, why: str) -> None:
     (d / "sim_pause.json").write_text(json.dumps({
         "pausiert": True, "seit": prev.get("seit") or pd.Timestamp.now(tz="UTC").isoformat(),
         "geprueft": pd.Timestamp.now(tz="UTC").isoformat(), "echte_trades": n_real, "grund": why,
-        "weiter_ab_echten_trades": n_real + RESUME_AFTER_REAL}, indent=2), encoding="utf-8")
+        "weiter_ab_echten_trades": n_real + RESUME_AFTER_REAL,
+        "arten": _kinds(d / "sim_table.parquet") or prev.get("arten")}, indent=2), encoding="utf-8")
     try:  # Anzeige sofort aktualisieren, auch wenn keine Runde mehr läuft
         st = json.loads((d / "sim_status.json").read_text(encoding="utf-8"))
         (d / "sim_status.json").write_text(json.dumps({**st, "pause": _pause_state(d)}, indent=2, default=str),
                                            encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
+
+
+def _kinds(tab_file: Path) -> list[str]:
+    try:
+        return sorted(pd.read_parquet(tab_file, columns=["asset"])["asset"].dropna().unique())
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _new_kinds_while_paused(d: Path, paused: dict[str, Any], user_data: Path | None) -> bool:
+    """Auch in der Pause bleibt die Kurstabelle aktuell. Kommt eine Art hinzu, die bei der Pause noch fehlte (25.10.:
+    15-Minuten-Kerzen, pausiert schon vor dem Update), darf die KI sie erst ausprobieren – sonst würde sie nie geprüft.
+    Bringt sie nichts, pausiert die nächste Prüfung (nach 25 Runden) wieder."""
+    import time
+
+    tab_file = d / "sim_table.parquet"
+    if not tab_file.exists() or time.time() - tab_file.stat().st_mtime <= TABLE_REFRESH_H * 3600:
+        return False
+    print(f"Simulation (pausiert): Kurstabelle neu {build(user_data=user_data)}", flush=True)
+    return bool(set(_kinds(tab_file)) - set(paused.get("arten") or ["aktie", "krypto"]))
 
 
 def _pause_state(d: Path) -> dict[str, Any] | None:

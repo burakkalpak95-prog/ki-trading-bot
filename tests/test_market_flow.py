@@ -241,3 +241,14 @@ def test_alpha_history_merges_local_daily_candles(tmp_path, monkeypatch):
     a = market_flow.load("C0/USDT", "alpha", ud)
     assert a["date"].min() < T0 - pd.Timedelta(days=300)  # Verlauf reicht vor die 200 API-Tage zurück
     assert a["date"].max() >= T0 - pd.Timedelta(days=2)
+
+
+def test_dollar_index_weekly_publication_still_used(tmp_path):
+    """25.10.: FRED veröffentlicht den Dollar-Index nur wöchentlich -> der neueste Wert ist oft >5 Tage alt."""
+    ud = tmp_path / "ud"
+    days = pd.date_range(T0 - pd.Timedelta(days=60), T0 - pd.Timedelta(days=9), freq="B", tz="UTC")
+    market_flow._store("CONTEXT", "dollar", pd.DataFrame({"date": days, "value": np.linspace(120, 125, len(days))}), ud)
+    market_flow._store("CONTEXT", "vix", pd.DataFrame({"date": days, "value": 20.0}), ud)
+    c = market_flow.context_features(pd.Series([T0]), ud)
+    assert c["ctx_dollar_chg_20d"].notna().all()
+    assert c["ctx_vix"].isna().all()  # tägliche Reihen: 9 Tage alt bleibt veraltet

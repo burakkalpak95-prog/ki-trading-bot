@@ -174,3 +174,24 @@ def test_outcomes_15m_hold_in_hours():
     c = df["close"].to_numpy()
     o = df["open"].to_numpy()
     assert np.isclose(a[0], c[3] / o[0] - 1) or a[0] == -0.06
+
+
+def test_paused_simulation_probes_new_kind(tmp_path, monkeypatch):
+    """25.10.: Pause kam vor den 15-Minuten-Simulationen -> die neue Art wird einmal ausprobiert statt nie geprüft."""
+    import os
+    import time
+
+    d = simulate.sim_dir(tmp_path)
+    d.mkdir(parents=True)
+    tab = d / "sim_table.parquet"
+    pd.DataFrame({"asset": ["krypto", "aktie"]}).to_parquet(tab)
+    simulate._set_pause(d, 100, "Test")
+    assert simulate._pause_state(d)["arten"] == ["aktie", "krypto"]
+    old = time.time() - 3 * 3600
+    os.utime(tab, (old, old))
+    monkeypatch.setattr(simulate, "build", lambda user_data=None: pd.DataFrame(
+        {"asset": ["krypto", "aktie", "krypto15"]}).to_parquet(tab) or {})
+    assert simulate._new_kinds_while_paused(d, simulate._pause_state(d), tmp_path)
+    os.utime(tab, (old, old))
+    simulate._set_pause(d, 100, "Test")  # jetzt mit krypto15 pausiert -> kein Probelauf mehr
+    assert not simulate._new_kinds_while_paused(d, simulate._pause_state(d), tmp_path)
