@@ -151,3 +151,23 @@ def test_untagged_trades_still_exit_after_longest_hold():
     young = SimpleNamespace(enter_tag="signal: Modell 60 %", open_date_utc=now - timedelta(hours=5))
     assert s.custom_exit("BTC/USDT", old, now, 1.0, 0.0) == "lernhorizont"
     assert s.custom_exit("BTC/USDT", young, now, 1.0, 0.0) is None
+
+
+def test_unstable_features_are_dropped_by_the_ai_itself():
+    """Punkt 7 (Burak 25.10.): Merkmale, deren Zusammenhang mit Gewinn je Jahr die Richtung wechselt, fliegen raus."""
+    import numpy as np
+    import pandas as pd
+
+    from kitb import self_learning
+
+    rng = np.random.default_rng(1)
+    rows = []
+    for i, year in enumerate([2022, 2023, 2024, 2025]):
+        n = 1000
+        good = rng.normal(size=n)
+        flip = rng.normal(size=n)
+        p = 0.5 + 0.2 * np.tanh(good) + 0.2 * np.tanh(flip) * (1 if i % 2 else -1)
+        rows.append(pd.DataFrame({"close_date": f"{year}-06-01T00:00:00+00:00", "good": good, "flip": flip,
+                                  "profit_pct": np.where(rng.random(n) < p, 0.01, -0.01)}))
+    sim = pd.concat(rows, ignore_index=True)
+    assert self_learning.stable_columns(sim, ["good", "flip", "fehlt"]) == ["good", "fehlt"]

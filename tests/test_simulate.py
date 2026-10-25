@@ -165,3 +165,12 @@ def test_simulation_pauses_when_nothing_useful_and_resumes(tmp_path, monkeypatch
     monkeypatch.setattr(simulate, "evaluate", lambda ud=None: {"hilft": False})
     simulate.loop(tmp_path, rounds=1)
     assert simulate._pause_state(d)["echte_trades"] == 200 and "weiterhin nicht" in simulate._pause_state(d)["grund"]
+
+
+def test_outcomes_15m_hold_in_hours():
+    """Punkt 2: auf 15-Minuten-Kerzen bedeutet „halten 1“ weiterhin 1 Stunde = 4 Kerzen."""
+    df = _candles(200)
+    a = simulate.outcomes(df, 0.0, per_h=4)[(1, 6)]
+    c = df["close"].to_numpy()
+    o = df["open"].to_numpy()
+    assert np.isclose(a[0], c[3] / o[0] - 1) or a[0] == -0.06

@@ -66,6 +66,32 @@ def relevance(sim: pd.DataFrame, real: pd.DataFrame, columns: list[str] | None =
     return r / r.mean()
 
 
+def stable_columns(sim: pd.DataFrame, cols: list[str], min_years: int = 3, min_n: int = 200) -> list[str]:
+    """Merkmale, die über die Jahre nichts Beständiges vorhersagen, sortiert die KI selbst aus (Burak 25.10., Punkt 7).
+
+    Je Kalenderjahr der Simulationen: Zusammenhang Merkmal ↔ Gewinn. Wechselt die Richtung in ≥ 25 % der Jahre, gilt das
+    Merkmal als Rauschen (so passten z. B. Nasdaq/VIX nur in zwei Tagen echter Trades). Ohne genug Jahre: behalten."""
+    if sim.empty or "close_date" not in sim:
+        return cols
+    year = pd.to_datetime(sim["close_date"], utc=True, format="ISO8601").dt.year
+    win = (sim["profit_pct"] > 0).astype(float)
+    keep = []
+    for c in cols:
+        if c not in sim:
+            keep.append(c)
+            continue
+        x = sim[c].astype(float).replace([np.inf, -np.inf], np.nan)
+        signs = []
+        for _, idx in x.groupby(year).groups.items():
+            xs, ws = x.loc[idx], win.loc[idx]
+            ok = xs.notna()
+            if ok.sum() >= min_n and xs[ok].std() > 0:
+                signs.append(np.sign(np.corrcoef(xs[ok], ws[ok])[0, 1]))
+        if len(signs) < min_years or min(signs.count(1.0), signs.count(-1.0)) < 0.25 * len(signs):
+            keep.append(c)
+    return keep or cols
+
+
 def effective(rel: np.ndarray) -> int:
     """Wie viele Simulationen zählen effektiv (Kish): alle gleich -> alle, wenige relevante -> wenige."""
     return int(round(rel.sum() ** 2 / (rel ** 2).sum())) if len(rel) and (rel ** 2).sum() > 0 else 0
@@ -137,8 +163,11 @@ def train(trades: pd.DataFrame) -> dict[str, Any]:
     sim_t, t = all_t[is_sim], all_t[~is_sim]
     cols = [c for c in SNAPSHOT_FEATURES if c in t and t[c].notna().mean() > 0.5]
     t = t[t[cols].notna().any(axis=1)] if cols else t
+    stable = stable_columns(sim_t, cols)
+    dropped = [c for c in cols if c not in stable]
+    cols = stable
     own = (t["own"] if "own" in t else pd.Series(True, index=t.index)).to_numpy(bool)
-    out: dict[str, Any] = {"trades": len(t), "active": False, "model": None}
+    out: dict[str, Any] = {"trades": len(t), "active": False, "model": None, "dropped_features": dropped}
     if len(t) < MIN_TRADES or not cols:
         out["why"] = f"erst {len(t)} Trades mit Marktlage im Gedächtnis (ab {MIN_TRADES} lernt der Filter)"
         return out

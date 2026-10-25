@@ -12,6 +12,7 @@ wie stark sie zählen (``sim_weight.json``).
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +21,11 @@ import pandas as pd
 
 from kitb import paths
 
+log = logging.getLogger(__name__)
+
 HOLD_HOURS = [1, 2, 4, 8]
 STOPS = [2, 4, 6]
+RECENT_15M_DAYS = 60
 SAMPLE = 60_000  # so viele Simulationen nimmt das Lernen höchstens auf (die jüngsten), damit das Neuanpassen schnell bleibt
 
 
@@ -29,12 +33,14 @@ def sim_dir(user_data: Path | None = None) -> Path:
     return (user_data or paths.USER_DATA) / "ai_memory"
 
 
-def outcomes(df: pd.DataFrame, cost: float) -> dict[tuple[int, int], np.ndarray]:
-    """Ergebnis nach Kosten je (Haltedauer h, Stoploss %) für einen Einstieg zum Open jeder Kerze (NaN am Ende)."""
+def outcomes(df: pd.DataFrame, cost: float, per_h: int = 1) -> dict[tuple[int, int], np.ndarray]:
+    """Ergebnis nach Kosten je (Haltedauer h Stunden, Stoploss %) für einen Einstieg zum Open jeder Kerze (NaN am Ende).
+    ``per_h`` = Kerzen je Stunde (4 bei 15-Minuten-Kerzen)."""
     o, low, c = df["open"].to_numpy(float), df["low"].to_numpy(float), df["close"].to_numpy(float)
     n = len(df)
     out = {}
-    for h in HOLD_HOURS:
+    for hh in HOLD_HOURS:
+        h = hh * per_h
         # Tiefster Kurs von Kerze i bis i+h-1 (Einstieg zum Open von i), Ausstieg zum Schluss von i+h-1
         lows = pd.Series(low).rolling(h).min().shift(-(h - 1)).to_numpy()
         exit_close = np.full(n, np.nan)
@@ -44,20 +50,20 @@ def outcomes(df: pd.DataFrame, cost: float) -> dict[tuple[int, int], np.ndarray]
             stop_px = o * (1 - s / 100)
             hit = lows <= stop_px
             px = np.where(hit, stop_px, exit_close)
-            out[(h, s)] = np.where(np.isfinite(px) & np.isfinite(lows), px / o - 1 - cost, np.nan)
+            out[(hh, s)] = np.where(np.isfinite(px) & np.isfinite(lows), px / o - 1 - cost, np.nan)
     return out
 
 
 def table_pair(df: pd.DataFrame, pair: str, cost: float, user_data: Path | None = None,
-               flow: bool = True) -> pd.DataFrame:
+               flow: bool = True, minutes: int = 60) -> pd.DataFrame:
     """Je Kerze: Marktlage der Vorkerze + Ergebnis für JEDE Kombination aus Haltedauer und Stoploss (Spalten r_h_s)."""
     from kitb import shared_memory
 
     df = df.sort_values("date").reset_index(drop=True)
-    feats = shared_memory.market_snapshot(df, 60, pair if flow else None, user_data).shift(1)  # Merkmale der Vorkerze
-    res = outcomes(df, cost)
+    feats = shared_memory.market_snapshot(df, minutes, pair if flow else None, user_data).shift(1)  # Merkmale der Vorkerze
+    res = outcomes(df, cost, max(1, 60 // minutes))
     out = feats.assign(pair=pair, date=df["date"], **{f"r_{h}_{s}": v for (h, s), v in res.items()})
-    return out.iloc[200:].dropna(subset=[f"r_{HOLD_HOURS[0]}_{STOPS[0]}"])  # Vorlauf für EMA200 usw.
+    return out.iloc[200 * max(1, 60 // minutes):].dropna(subset=[f"r_{HOLD_HOURS[0]}_{STOPS[0]}"])  # Vorlauf EMA200
 
 
 def _trades_from_table(tab: pd.DataFrame, hs: np.ndarray, ss: np.ndarray, label: str,
@@ -159,8 +165,19 @@ def build(*, pairs: list[str] | None = None, datadir: Path | None = None, user_d
             continue
         if until:
             df = df[df["date"] < pd.Timestamp(until, tz="UTC")]
-        parts.append(table_pair(df, pair, cost, user_data))
-    crypto = pd.concat(parts, ignore_index=True).assign(asset="krypto") if parts else pd.DataFrame()
+        parts.append(table_pair(df, pair, cost, user_data).assign(asset="krypto"))
+        # Punkt 2 (Burak 25.10.): KI 1/2 handeln auf 15 Minuten -> zusätzlich 15-Minuten-Einstiege der letzten
+        # RECENT_15M_DAYS Tage (nicht seit 2022: der Arbeitsspeicher reicht dafür nicht)
+        try:
+            q = load_ohlcv_raw(datadir, pair, "15m")
+            q = q[q["date"] >= q["date"].max() - pd.Timedelta(days=RECENT_15M_DAYS + 3)] if not q.empty else q
+            if until:
+                q = q[q["date"] < pd.Timestamp(until, tz="UTC")]
+            if len(q) > 1000:
+                parts.append(table_pair(q, pair, cost, user_data, minutes=15).assign(asset="krypto15"))
+        except Exception:  # noqa: BLE001 – ohne 15-Minuten-Daten bleibt es bei Stundenkerzen
+            log.exception("15-Minuten-Simulation %s", pair)
+    crypto = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
     stock = stock_table(get_text).assign(asset="aktie") if stocks else pd.DataFrame()
     table = pd.concat([x for x in (crypto, stock) if not x.empty], ignore_index=True) if len(crypto) + len(stock) \
         else pd.DataFrame()
@@ -175,7 +192,8 @@ def build(*, pairs: list[str] | None = None, datadir: Path | None = None, user_d
     sim = _round_trades(table, rng.choice(HOLD_HOURS, len(table)), rng.choice(STOPS, len(table)), "sim")
     _atomic_parquet(sim, d / "simulated_trades.parquet")
     return {"trades": len(sim), "krypto": int((table["asset"] == "krypto").sum()),
-            "aktien": int((table["asset"] == "aktie").sum()), "cost_round_trip": cost,
+            "aktien": int((table["asset"] == "aktie").sum()), "krypto_15m": int((table["asset"] == "krypto15").sum()),
+            "cost_round_trip": cost,
             "win_rate": float((sim["profit_pct"] > 0).mean())}
 
 

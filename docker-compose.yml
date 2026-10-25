@@ -125,9 +125,8 @@ services:
   paper-macd-rsi-15m:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "macd_rsi_15m"]
-  paper-bollinger-15m:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "bollinger_15m"]
+  # bollinger_15m abgeschaltet (25.10.2026): seit Start am 23.10. kein einziger Trade, im 30-Tage-Backtest nur 13 –
+  # liefert kaum Lerndaten, belegt aber ~0,5 GB RAM.
   paper-donchian-15m:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "donchian_15m"]
