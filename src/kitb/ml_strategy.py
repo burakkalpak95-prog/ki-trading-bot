@@ -129,6 +129,10 @@ class KitbFreqaiBase(RiskManagedMixin, IStrategy):
 
         chosen = hold_from_tag(trade.enter_tag)
         limit = chosen or self._kitb().get("max_hold_candles")
+        if not limit and self._kitb().get("self_learning"):
+            # Ohne gewählte Haltedauer (Trade vor dem Selbstlernen eröffnet) und ohne Lernhorizont (Bot A/B) gab es seit
+            # dem Abschalten von ml_weak keinen Ausstieg mehr außer dem Stoploss (25.10.: 13 Trades seit 16 Uhr offen)
+            limit = max(self._hold_options())
         if limit and (current_time - trade.open_date_utc).total_seconds() >= limit * timeframe_to_seconds(self.timeframe):
             return f"halten {chosen}" if chosen else "lernhorizont"
         return None

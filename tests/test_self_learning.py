@@ -134,3 +134,20 @@ def test_relevance_prefers_simulations_like_real_trades():
     rel = self_learning.relevance(pd.concat([near, far], ignore_index=True), real)
     assert rel[:500].mean() > 5 * rel[500:].mean() and np.isclose(rel.mean(), 1.0)
     assert self_learning.effective(rel) < 1000
+
+
+def test_untagged_trades_still_exit_after_longest_hold():
+    """25.10.: Bot A/B (kein Lernhorizont) hielten Trades von vor dem Selbstlernen endlos – ml_weak ist aus."""
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from kitb.ml_strategy import KitbFreqaiBase
+
+    s = KitbFreqaiBase.__new__(KitbFreqaiBase)
+    s.timeframe = "1h"
+    s._kitb = lambda: {"self_learning": True, "hold_options": [4, 8, 16, 32]}
+    now = datetime(2026, 10, 25, tzinfo=timezone.utc)
+    old = SimpleNamespace(enter_tag="signal: Modell 60 %", open_date_utc=now - timedelta(hours=33))
+    young = SimpleNamespace(enter_tag="signal: Modell 60 %", open_date_utc=now - timedelta(hours=5))
+    assert s.custom_exit("BTC/USDT", old, now, 1.0, 0.0) == "lernhorizont"
+    assert s.custom_exit("BTC/USDT", young, now, 1.0, 0.0) is None
