@@ -216,6 +216,8 @@ def test_learning_mode_needs_human_approval_and_retrains_daily(reg, tmp_path):
     assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True
     assert cfg["freqai"]["live_retrain_hours"] == 1 and cfg["freqai"]["identifier"].startswith("paper-learn-bot_a-")
     assert not cfg["exchange"].get("key")
+    # Burak 25.10.2026: Bot A/B halten kürzer (2–16 h), damit schneller Lerndaten zurückkommen
+    assert cfg["freqai"]["kitb"]["hold_options"] == [2, 4, 8, 16]
 
 
 def test_explore_bots_are_marked_and_candidate_stays_candidate(reg, tmp_path):

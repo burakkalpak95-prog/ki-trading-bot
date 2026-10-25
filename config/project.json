@@ -101,6 +101,15 @@
                 "C": 0.5,
                 "max_iter": 1000,
                 "class_weight": "balanced"
+            },
+            "$comment_practice": "Burak 25.10.2026 („wenn du es als wertvolles Update siehst, ja“): kürzere Haltedauer 2–16 h statt 4–32 h -> etwa doppelt so viele abgeschlossene Trades, schnellere Lerndaten. Ohne gewählte Haltedauer schließt ein Trade spätestens nach 16 h.",
+            "practice": {
+                "hold_options": [
+                    2,
+                    4,
+                    8,
+                    16
+                ]
             }
         },
         "bot_b": {
@@ -131,6 +140,15 @@
                 "n_jobs": 4,
                 "verbose": -1,
                 "class_weight": "balanced"
+            },
+            "$comment_practice": "Burak 25.10.2026 („wenn du es als wertvolles Update siehst, ja“): kürzere Haltedauer 2–16 h statt 4–32 h -> etwa doppelt so viele abgeschlossene Trades, schnellere Lerndaten. Ohne gewählte Haltedauer schließt ein Trade spätestens nach 16 h.",
+            "practice": {
+                "hold_options": [
+                    2,
+                    4,
+                    8,
+                    16
+                ]
             }
         },
         "ki_trader": {
