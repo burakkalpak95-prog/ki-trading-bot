@@ -85,7 +85,7 @@ def test_ki_reward_paper_config(tmp_path):
     strategy_approval.approve(reg, "ki_reward", by="Burak", reason="KI 2")
     _, cfg = paper.build_paper_config("ki_reward", reg, tmp_path / "ud")
     assert cfg["kitb_mode"] == "learning" and cfg["dry_run"] is True and cfg["kitb_practice"]["explore_share"] > 0
-    assert len(cfg["exchange"]["pair_whitelist"]) == 16 and not cfg["exchange"].get("key")
+    assert len(cfg["exchange"]["pair_whitelist"]) == 30 and not cfg["exchange"].get("key")
 
 
 def test_fleet_approval_includes_both_ais(ud, capsys):
@@ -109,7 +109,7 @@ def test_learning_ais_get_one_slot_per_coin_within_exposure_limit(tmp_path):
     for bot in ("ki_reward", "ki_trader"):
         _, cfg = paper.build_paper_config(bot, reg, tmp_path / "ud")
         n = len(cfg["exchange"]["pair_whitelist"])
-        assert cfg["max_open_trades"] == 16 == n == cfg["kitb_max_open_positions"]
+        assert cfg["max_open_trades"] == 30 == n == cfg["kitb_max_open_positions"]
         assert cfg["stake_amount"] * n <= cfg["dry_run_wallet"] * lim.max_total_exposure_fraction
     for bot in ("trend_d1", "donchian_15m"):
         _, cfg = paper.build_paper_config(bot, reg, tmp_path / "ud")

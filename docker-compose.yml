@@ -113,24 +113,9 @@ services:
   paper-momentum-d1:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "momentum_d1"]
-  paper-ema-cross-1h-ki:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "ema_cross_1h_ki"]
-  paper-trend-adx-1h-ki:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "trend_adx_1h_ki"]
-  paper-macd-rsi-1h-ki:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "macd_rsi_1h_ki"]
-  paper-donchian-1h-ki:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "donchian_1h_ki"]
-  paper-squeeze-1h-ki:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "squeeze_1h_ki"]
-  paper-momentum-d1-ki:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "momentum_d1_ki"]
+  # 25.10.2026: die 6 *_ki-Kopien sind abgeschaltet (Claude entscheidet die Flotte nach Datenwert, Burak 23.10.):
+  # sie nahmen nur eine Teilmenge derselben Trades wie ihre Kontrollgruppe (doppelte Daten im Gedächtnis), kaum Trades
+  # seit 23.10., ~0,5 GB RAM je Bot. Der Platz geht an 30 statt 16 Lern-Coins. Ihre alten Trades bleiben gespeichert.
   paper-ema-cross-15m:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "ema_cross_15m"]

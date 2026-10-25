@@ -123,3 +123,12 @@ def test_memory_trains_every_few_hours():
     nxt = ai_memory.next_training(pd.Timestamp("2026-10-23 05:00", tz="UTC"))
     assert pd.Timestamp("2026-10-23 05:00", tz="UTC") < nxt <= pd.Timestamp("2026-10-24 00:30", tz="UTC")
     assert nxt.minute == 30
+
+
+def test_paper_trades_weigh_as_much_as_half_the_backtests():
+    """25.10.: 416 echte Trades gingen neben ~14.800 Backtest-Trades unter."""
+    df = pd.DataFrame({"source": ["backtest"] * 1000 + ["paper"] * 50})
+    w = ai_memory._weights(df)
+    assert np.isclose(w[1000:].sum(), ai_memory.PAPER_SHARE * 1000) and (w[:1000] == 1).all()
+    assert ai_memory._weights(pd.DataFrame({"source": ["backtest"] * 10})) is None
+    assert ai_memory.paper_check(pd.DataFrame({"source": ["paper"] * 5}), ["x"])["auc_paper"] is None

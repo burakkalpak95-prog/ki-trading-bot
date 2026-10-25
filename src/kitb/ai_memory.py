@@ -39,6 +39,18 @@ FEATURE_TEXT = {
 }
 MIN_TRADES_TO_TRAIN = 50
 HOLDOUT_SHARE = 0.2
+# Echte Paper-Trades zählen zusammen so viel wie PAPER_SHARE × alle Backtest-Trades (25.10.: 416 echte gingen neben
+# ~14.800 Backtest-Trades unter, der Filter blieb bei ~53 % Trennschärfe stehen).
+PAPER_SHARE = 0.5
+PAPER_TEST_SHARE = 0.3  # ehrliche Messung: die jüngsten 30 % der echten Paper-Trades, gelernt nur aus allem davor
+
+
+def _weights(df: pd.DataFrame) -> np.ndarray | None:
+    paper = (df["source"] == "paper").to_numpy() if "source" in df else np.zeros(len(df), bool)
+    w = np.ones(len(df))
+    if paper.any() and (~paper).any():
+        w[paper] = max(1.0, PAPER_SHARE * (~paper).sum() / paper.sum())
+    return None if (w == 1.0).all() else w  # ohne Paper-Trades: ungewichtet wie bisher
 # Schwelle = Gewinnquote im Training: erlaubt werden Trades mit überdurchschnittlicher Gewinnchance. Eine feste 0,5 würde
 # bei Strategien mit wenigen, aber großen Gewinnen (Trefferquote ~25 %) jeden Trade ablehnen.
 
@@ -294,7 +306,8 @@ class Ensemble:
         return np.column_stack([1 - p, p])
 
 
-def _fit(x: pd.DataFrame, y: pd.Series, variant: str | dict = "vorsichtig (flache Bäume)"):
+def _fit(x: pd.DataFrame, y: pd.Series, variant: str | dict = "vorsichtig (flache Bäume)",
+         w: np.ndarray | None = None):
     from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import make_pipeline
@@ -324,11 +337,12 @@ def _fit(x: pd.DataFrame, y: pd.Series, variant: str | dict = "vorsichtig (flach
                           n_jobs=2, verbosity=0)
     else:
         m = make_pipeline(StandardScaler(), LogisticRegression(C=0.5, max_iter=2000))
-    return m.fit(x.fillna(0.0), y)
+        return m.fit(x.fillna(0.0), y, **({} if w is None else {"logisticregression__sample_weight": w}))
+    return m.fit(x.fillna(0.0), y, **({} if w is None else {"sample_weight": w}))
 
 
-def _fit_ensemble(x: pd.DataFrame, y: pd.Series, names: list[str]):
-    models = [_fit(x, y, n) for n in names]
+def _fit_ensemble(x: pd.DataFrame, y: pd.Series, names: list[str], w: np.ndarray | None = None):
+    models = [_fit(x, y, n, w) for n in names]
     return models[0] if len(models) == 1 else Ensemble(models)
 
 
@@ -361,7 +375,7 @@ def experiment(memory: pd.DataFrame) -> dict[str, Any]:
         per_factor: dict[float, list] = {f: [] for f in THRESHOLD_FACTORS}
         for tr, va in folds:
             x_tr = _design(tr)
-            p = _proba(_fit(x_tr, tr["win"], name), _design(va, list(x_tr.columns)))
+            p = _proba(_fit(x_tr, tr["win"], name, _weights(tr)), _design(va, list(x_tr.columns)))
             base = float(tr["win"].mean())
             avg_all = float(va["close_profit"].astype(float).mean())
             for f in THRESHOLD_FACTORS:
@@ -409,7 +423,7 @@ def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, regi
     train, hold = memory.iloc[:cut], memory.iloc[cut:]
     x_tr = _design(train)
     x_ho = _design(hold, list(x_tr.columns))
-    m = _fit_ensemble(x_tr, train["win"], names)
+    m = _fit_ensemble(x_tr, train["win"], names, _weights(train))
     p = _proba(m, x_ho)
     base_rate = float(train["win"].mean())
     allow = p >= base_rate * factor
@@ -434,8 +448,8 @@ def evaluate_and_train(memory: pd.DataFrame, user_data: Path | None = None, regi
                "paper_trades": int((memory["source"] == "paper").sum()),
                "experiments": len(exp["tried"]), "variants": exp["n_variants"], "winner": variant,
                "winner_factor": factor,
-               "filter_active": exp["use_filter"]}
-    final = _fit_ensemble(_design(memory), memory["win"], names)
+               "filter_active": exp["use_filter"], **paper_check(memory, names)}
+    final = _fit_ensemble(_design(memory), memory["win"], names, _weights(memory))
     out = memory_dir(user_data)
     out.mkdir(parents=True, exist_ok=True)
     model_file = out / f"filter-{datetime.now(UTC):%Y%m%d-%H%M%S}.joblib"
@@ -505,6 +519,23 @@ def allow_entry(*, strategy: str, pair: str, when: Any, user_data: Path | None =
 
 
 # --- Auswertung für die Seite „Was hat die KI gelernt?“ ---------------------------------------------------------------
+
+def paper_check(memory: pd.DataFrame, names: list[str]) -> dict[str, Any]:
+    """Ehrliche Lern-Kurve (Burak 25.10.): Trennschärfe NUR an echten Paper-Trades – gelernt aus allem, was vor den
+    jüngsten 30 % der Paper-Trades abgeschlossen war, geprüft an diesen. Backtests zählen hier nicht als Prüfung."""
+    from sklearn.metrics import roc_auc_score
+
+    paper = memory[memory["source"] == "paper"] if "source" in memory else memory.iloc[:0]
+    if len(paper) < MIN_TRADES_TO_TRAIN:
+        return {"auc_paper": None, "n_paper_test": 0}
+    test = paper.iloc[int(len(paper) * (1 - PAPER_TEST_SHARE)):]
+    train = memory[memory["close_date"] < test["close_date"].iloc[0]]
+    if train["win"].nunique() < 2 or test["win"].nunique() < 2:
+        return {"auc_paper": None, "n_paper_test": len(test)}
+    x_tr = _design(train)
+    p = _proba(_fit_ensemble(x_tr, train["win"], names, _weights(train)), _design(test, list(x_tr.columns)))
+    return {"auc_paper": round(float(roc_auc_score(test["win"], p)), 4), "n_paper_test": len(test)}
+
 
 def learning_progress(registry) -> dict[str, Any]:
     rows = registry.query("SELECT * FROM ai_filter_versions ORDER BY id")

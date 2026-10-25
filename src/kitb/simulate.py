@@ -331,11 +331,15 @@ def loop(user_data: Path | None = None, rounds: int | None = None, pause: float 
             time.sleep(PAUSE_CHECK_S if rounds is None else 0)
             continue
         tab_file = d / "sim_table.parquet"
-        if not tab_file.exists() or time.time() - tab_file.stat().st_mtime > 6 * 3600:
+        if not tab_file.exists() or time.time() - tab_file.stat().st_mtime > TABLE_REFRESH_H * 3600:
             print(f"Simulation: Kurstabelle neu {build(user_data=user_data)}", flush=True)
             evaluate(user_data)
         table = pd.read_parquet(tab_file)
-        table = table[table["date"] + pd.Timedelta(hours=8 * 24) < pd.Timestamp.now(tz="UTC")]  # Ergebnis bekannt
+        # Ergebnis bekannt: Aktien halten bis 8 Tage, Krypto bis 8 h. Früher galt 8 Tage für alle – damit fehlte gerade
+        # die jüngste Krypto-Woche, also die aktuelle Marktlage (25.10.: „Schattenhandel“ auf den letzten Stunden)
+        stock = (table["asset"] == "aktie") if "asset" in table else pd.Series(False, index=table.index)
+        horizon = np.where(stock, pd.Timedelta(days=8), pd.Timedelta(hours=max(HOLD_HOURS) + 1))
+        table = table[table["date"] + horizon < pd.Timestamp.now(tz="UTC")]
         memory = pd.read_parquet(d / "simulated_trades.parquet") if (d / "simulated_trades.parquet").exists() \
             else pd.DataFrame()
         r = int(memory["round"].max()) + 1 if "round" in memory and memory["round"].notna().any() else 1
@@ -359,6 +363,7 @@ def loop(user_data: Path | None = None, rounds: int | None = None, pause: float 
         time.sleep(pause)
 
 
+TABLE_REFRESH_H = 2      # Kurstabelle öfter neu: die jüngsten Stunden (aktuelle Marktlage) kommen schneller dazu
 RESUME_AFTER_REAL = 50   # nach so vielen neuen echten Trades prüft die pausierte Simulation, ob sie wieder hilft
 PAUSE_CHECK_S = 1800
 SATURATION_CHECKS = 3    # so viele Prüfungen in Folge (je 25 Runden) ohne Nutzen -> Pause
