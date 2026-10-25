@@ -121,3 +121,47 @@ def test_simulations_do_not_drown_real_trades():
     assert np.isclose(w[sim].sum(), sl.SIM_SHARE * n_real) and (w[~sim] == 1.0).all()
     x = pd.DataFrame({"a": rng.normal(size=len(sim))})
     sl._fit(x, rng.integers(0, 2, len(sim)), sim=sim, sim_share=0.1)  # läuft mit Anteil statt Gewicht je Trade
+
+
+def test_diagnose_runs(tmp_path, monkeypatch):
+    sim = simulate.simulate_pair(_candles(900), "ZZZ/USDT", 0.0034, np.random.default_rng(1), tmp_path)
+    monkeypatch.setattr(simulate, "load", lambda user_data=None, n=0: sim)
+    rng = np.random.default_rng(2)
+    n = 200
+    real = pd.DataFrame({"ki": "ki_trader", "pair": "ZZZ/USDT", "profit_pct": rng.normal(0, 0.01, n),
+                         "open_date": pd.date_range("2024-03-10", periods=n, freq="h", tz="UTC").astype(str),
+                         "close_date": pd.date_range("2024-03-10 02:00", periods=n, freq="h", tz="UTC").astype(str),
+                         "ret_1h": rng.normal(0, 0.01, n), "rsi_14": rng.uniform(20, 80, n)})
+    monkeypatch.setattr("kitb.shared_memory.load", lambda ud=None: real)
+    res = simulate.diagnose(tmp_path)
+    assert res["echte_trades"] == n and "auc_nur_sims_auf_echten" in res
+    assert (tmp_path / "reports" / "sim-diagnose.json").exists()
+
+
+def test_simulation_pauses_when_nothing_useful_and_resumes(tmp_path, monkeypatch):
+    """Burak 25.10.: kann die KI aus der Simulation nichts Brauchbares mehr gewinnen -> Feedback + Stopp."""
+    import json
+
+    d = simulate.sim_dir(tmp_path)
+    d.mkdir(parents=True)
+    assert simulate.saturated(d) == (False, "")
+    (d / "sim_evals.jsonl").write_text("".join(json.dumps({"hilft": False, "auc_ohne": 0.76, "auc_mit": 0.44}) + "\n"
+                                               for _ in range(3)), encoding="utf-8")
+    rounds = [{"Ø genommen": -0.003, "Ø zufällig": -0.003}] * 200
+    (d / "sim_rounds.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rounds), encoding="utf-8")
+    stop, why = simulate.saturated(d)
+    assert stop and "nicht" in why
+    better = [{"Ø genommen": -0.003, "Ø zufällig": -0.003}] * 100 + [{"Ø genommen": 0.002, "Ø zufällig": -0.003}] * 100
+    (d / "sim_rounds.jsonl").write_text("".join(json.dumps(r) + "\n" for r in better), encoding="utf-8")
+    assert simulate.saturated(d)[0] is False  # wird in der Simulation noch besser -> weiter
+    # pausiert: läuft erst nach genug neuen echten Trades und nur, wenn die Prüfung Nutzen zeigt, wieder an
+    simulate._set_pause(d, 100, "Test")
+    real = pd.DataFrame({"profit_pct": [0.0] * 120})
+    monkeypatch.setattr("kitb.shared_memory.load", lambda ud=None: real)
+    simulate.loop(tmp_path, rounds=1)
+    assert simulate._pause_state(d)["echte_trades"] == 100  # zu wenige neue -> bleibt pausiert, nichts gespielt
+    real = pd.DataFrame({"profit_pct": [0.0] * 200})
+    monkeypatch.setattr("kitb.shared_memory.load", lambda ud=None: real)
+    monkeypatch.setattr(simulate, "evaluate", lambda ud=None: {"hilft": False})
+    simulate.loop(tmp_path, rounds=1)
+    assert simulate._pause_state(d)["echte_trades"] == 200 and "weiterhin nicht" in simulate._pause_state(d)["grund"]

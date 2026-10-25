@@ -38,6 +38,39 @@ SIM_SHARE = 0.5
 REAL_FLOOR = 100  # bei wenigen echten Trades zählen Simulationen wie gegenüber 100 echten
 
 
+def relevance(sim: pd.DataFrame, real: pd.DataFrame, columns: list[str] | None = None) -> np.ndarray:
+    """Wie brauchbar ist jede Simulation? (Burak 25.10.: „nur relevante Daten, die sie selber als brauchbar einstuft“)
+
+    Die KI lernt, echte Trades von Simulationen zu unterscheiden. Simulationen, die echten Marktlagen ähneln, bekommen
+    hohe Relevanz; solche aus Lagen, die bei echten Trades nie vorkommen, fast keine (Dichteverhältnis p/(1−p)).
+    Mittelwert 1; ohne genug echte Trades zählen alle gleich."""
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    from kitb.shared_memory import SNAPSHOT_FEATURES
+
+    if sim.empty:
+        return np.array([])
+    cols = columns or [c for c in SNAPSHOT_FEATURES if c in real and real[c].notna().mean() > 0.5]
+    if len(real) < MIN_TRADES or not cols:
+        return np.ones(len(sim))
+    both = pd.concat([sim, real], ignore_index=True)
+    x, _ = _design(both, cols)
+    y = np.r_[np.zeros(len(sim), int), np.ones(len(real), int)]
+    w = np.where(y == 1, len(sim) / len(real), 1.0)  # beide Seiten gleich stark
+    m = make_pipeline(StandardScaler(), LogisticRegression(C=0.3, max_iter=500))
+    m.fit(x, y, logisticregression__sample_weight=w)
+    p = np.clip(m.predict_proba(x.iloc[: len(sim)])[:, 1], 1e-4, 1 - 1e-4)
+    r = np.minimum(p / (1 - p), 20.0)  # Ausreißer begrenzen: keine einzelne Simulation dominiert
+    return r / r.mean()
+
+
+def effective(rel: np.ndarray) -> int:
+    """Wie viele Simulationen zählen effektiv (Kish): alle gleich -> alle, wenige relevante -> wenige."""
+    return int(round(rel.sum() ** 2 / (rel ** 2).sum())) if len(rel) and (rel ** 2).sum() > 0 else 0
+
+
 def sim_per_trade(real_weight: float, n_sim: int, share: float | None = None) -> float:
     """Gewicht EINES simulierten Trades, so dass alle Simulationen zusammen ``share`` × echtes Gesamtgewicht ergeben."""
     return (SIM_SHARE if share is None else share) * max(float(real_weight), REAL_FLOOR) / max(n_sim, 1)
@@ -55,7 +88,7 @@ def own_trades(ki: str, user_data: Path | None = None) -> pd.DataFrame:
 
 
 def _fit(x: pd.DataFrame, y: np.ndarray, own: np.ndarray | None = None, sim: np.ndarray | None = None,
-         sim_share: float | None = None):
+         sim_share: float | None = None, rel: np.ndarray | None = None):
     """Gewichte: jüngere echte Trades zählen mehr (Halbwertszeit in Trades), eigene dreifach, Simulationen wenig."""
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import make_pipeline
@@ -67,7 +100,7 @@ def _fit(x: pd.DataFrame, y: np.ndarray, own: np.ndarray | None = None, sim: np.
     w[~sim] = 0.5 ** ((n_real - 1 - np.arange(n_real)) / HALF_LIFE)
     if own is not None:
         w = w * np.where(own, OWN_WEIGHT, 1.0)
-    w[sim] = sim_per_trade(w[~sim].sum(), int(sim.sum()), sim_share)
+    w[sim] = sim_per_trade(w[~sim].sum(), int(sim.sum()), sim_share) * (1.0 if rel is None else np.asarray(rel))
     m = make_pipeline(StandardScaler(), LogisticRegression(C=0.3, max_iter=500))
     m.fit(x, y, logisticregression__sample_weight=w)
     return m
@@ -77,7 +110,8 @@ def _weights(t: pd.DataFrame) -> np.ndarray:
     own = t["own"].fillna(False).to_numpy(bool) if "own" in t else np.zeros(len(t), bool)
     sim = (t["kind"] == "sim").to_numpy(bool) if "kind" in t else np.zeros(len(t), bool)
     w = np.where(own, OWN_WEIGHT, 1.0)
-    w[sim] = sim_per_trade(w[~sim].sum(), int(sim.sum()))
+    rel = t["relevance"].fillna(1.0).to_numpy()[sim] if "relevance" in t else 1.0
+    w[sim] = sim_per_trade(w[~sim].sum(), int(sim.sum())) * rel
     return w
 
 
@@ -121,7 +155,7 @@ def train(trades: pd.DataFrame) -> dict[str, Any]:
     sim_old = np.r_[np.ones(len(sim_t), bool), np.zeros(cut, bool)]
     if np.unique(y_old).size == 2:
         x_old, fill = _design(old, cols)
-        m = _fit(x_old, y_old, own_old, sim_old)
+        m = _fit(x_old, y_old, own_old, sim_old, rel=_rel(sim_t))
         p = m.predict_proba(_design(new, cols, fill)[0])[:, 1]
         taken = new["profit_pct"].to_numpy()[p >= _base_rate(y[:cut], own[:cut])]
         base, filt = float(new["profit_pct"].mean()), (float(taken.mean()) if len(taken) >= 5 else None)
@@ -130,11 +164,15 @@ def train(trades: pd.DataFrame) -> dict[str, Any]:
     full = pd.concat([sim_t, t], ignore_index=True) if not sim_t.empty else t
     x, fill = _design(full, cols)
     out.update(model=_fit(x, (full["profit_pct"] > 0).to_numpy(int), np.r_[np.zeros(len(sim_t), bool), own],
-                          np.r_[np.ones(len(sim_t), bool), np.zeros(len(t), bool)]),
+                          np.r_[np.ones(len(sim_t), bool), np.zeros(len(t), bool)], rel=_rel(sim_t)),
                columns=cols, fill=fill, own=int(own.sum()), threshold=_base_rate(y, own), simulated=len(sim_t))
     out["why"] = ("Filter aktiv: auf den jüngsten Trades besser als alle nehmen" if out["active"]
                   else "Filter aus: noch kein Vorteil auf ungesehenen Trades nachgewiesen")
     return out
+
+
+def _rel(sim_t: pd.DataFrame) -> np.ndarray | None:
+    return sim_t["relevance"].fillna(1.0).to_numpy() if "relevance" in sim_t and len(sim_t) else None
 
 
 _SIM: dict[str, Any] = {}
@@ -163,10 +201,14 @@ def state(ki: str, user_data: Path | None = None) -> dict[str, Any]:
     sim = _sims(user_data)
     if not sim.empty:
         sim = sim[pd.to_datetime(sim["close_date"], utc=True, format="ISO8601") < pd.Timestamp.now(tz="UTC")]
+    real = t
     t = pd.concat([sim, t], ignore_index=True) if not sim.empty else t
     key = (ki, str(user_data), len(t), None if t.empty else str(t["close_date"].iloc[-1]))
     if key not in _cache:
         _cache.clear()
+        if not sim.empty:  # die KI stuft jede Simulation selbst als mehr oder weniger brauchbar ein
+            t = pd.concat([sim.assign(relevance=relevance(sim, real.dropna(subset=["profit_pct"]))), real],
+                          ignore_index=True)
         _cache[key] = {**train(t), "_trades": t}
     return _cache[key]
 

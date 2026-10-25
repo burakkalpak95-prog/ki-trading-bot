@@ -240,6 +240,8 @@ def play_round(table: pd.DataFrame, memory: pd.DataFrame, real: pd.DataFrame, r:
     from kitb import self_learning as sl
 
     mem = memory.tail(SAMPLE)
+    if not mem.empty and not real.empty:
+        mem = mem.assign(relevance=sl.relevance(mem, real.dropna(subset=["profit_pct"])))
     st = sl.train(pd.concat([mem, real], ignore_index=True)) if not real.empty or not mem.empty else {}
     rows = table.iloc[rng.choice(len(table), min(size, len(table)), replace=False)].reset_index(drop=True)
     if st.get("model") is not None:
@@ -270,7 +272,10 @@ def play_round(table: pd.DataFrame, memory: pd.DataFrame, real: pd.DataFrame, r:
              "Ø zufällig": float(np.nanmean(all_combos)) if all_combos.size else None,
              "Treffer genommen": float((trades["profit_pct"] > 0).mean()) if len(trades) else None,
              "Filter aktiv": bool(st.get("active")), "Haltedauer bevorzugt (h)": int(hold.sort_values("mean")["halten"].iloc[-1]),
-             "Stoploss bevorzugt (%)": int(pd.DataFrame(stops).sort_values("mean")["stop"].iloc[-1])}
+             "Stoploss bevorzugt (%)": int(pd.DataFrame(stops).sort_values("mean")["stop"].iloc[-1]),
+             # wie viele der genutzten Simulationen die KI effektiv als brauchbar einstuft (Rest zählt kaum)
+             "relevant (effektiv)": sl.effective(mem["relevance"].to_numpy()) if "relevance" in mem else len(mem),
+             "genutzt": int(len(mem))}
     return trades, stats
 
 
@@ -296,6 +301,7 @@ def _write_status(d: Path, memory: pd.DataFrame, stats: dict[str, Any], table_ro
         "gewicht_je_sim_trade": weight(d.parent if d.name == "ai_memory" else None),
         "kurs_gelegenheiten": table_rows,
         "letzte_runde": stats,
+        "pause": _pause_state(d),  # Feedback der KI: gestoppt, weil nichts Brauchbares mehr kommt (mit Grund)
     }
     (d / "sim_status.json").write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
 
@@ -311,6 +317,19 @@ def loop(user_data: Path | None = None, rounds: int | None = None, pause: float 
     rng = np.random.default_rng()
     done = 0
     while rounds is None or done < rounds:
+        paused = _pause_state(d)
+        if paused:  # die KI hat gemeldet: aus der Simulation ist nichts Brauchbares mehr zu holen
+            n_real = len(shared_memory.load(user_data))
+            if n_real >= paused["echte_trades"] + RESUME_AFTER_REAL:
+                res = evaluate(user_data)
+                if res.get("hilft"):
+                    (d / "sim_pause.json").unlink(missing_ok=True)
+                    print("Simulation: läuft wieder – mit den neuen echten Trades helfen Simulationen", flush=True)
+                    continue
+                _set_pause(d, n_real, "Neu geprüft: Simulationen helfen weiterhin nicht. " + paused["grund"])
+            done += 1
+            time.sleep(PAUSE_CHECK_S if rounds is None else 0)
+            continue
         tab_file = d / "sim_table.parquet"
         if not tab_file.exists() or time.time() - tab_file.stat().st_mtime > 6 * 3600:
             print(f"Simulation: Kurstabelle neu {build(user_data=user_data)}", flush=True)
@@ -332,8 +351,61 @@ def loop(user_data: Path | None = None, rounds: int | None = None, pause: float 
         print(f"Simulation: {stats}", flush=True)
         if r % 25 == 0:
             evaluate(user_data)
+            stop, why = saturated(d)
+            if stop:
+                _set_pause(d, len(real), why)
+                print(f"Simulation: pausiert – {why}", flush=True)
         done += 1
         time.sleep(pause)
+
+
+RESUME_AFTER_REAL = 50   # nach so vielen neuen echten Trades prüft die pausierte Simulation, ob sie wieder hilft
+PAUSE_CHECK_S = 1800
+SATURATION_CHECKS = 3    # so viele Prüfungen in Folge (je 25 Runden) ohne Nutzen -> Pause
+
+
+def saturated(d: Path) -> tuple[bool, str]:
+    """Gewinnt die KI noch brauchbare Daten aus der Simulation? (Burak 25.10.: „wenn sie meint, dass sie keine brauchbaren
+    Daten mehr aus der Simulation gewinnen kann, soll die Simulation gestoppt werden“)
+
+    Nein, wenn (1) die letzten Prüfungen an ECHTEN Trades alle sagen, dass Simulationen die Vorhersage nicht verbessern,
+    und (2) die KI in der Simulation selbst nicht mehr besser wird (Vorsprung „Ø genommen − Ø zufällig“ der letzten 100
+    Runden nicht größer als der 100 davor)."""
+    try:
+        evals = [json.loads(x) for x in (d / "sim_evals.jsonl").read_text(encoding="utf-8").splitlines()]
+        rounds = [json.loads(x) for x in (d / "sim_rounds.jsonl").read_text(encoding="utf-8").splitlines()[-200:]]
+    except Exception:  # noqa: BLE001
+        return False, ""
+    last = [e for e in evals if "hilft" in e][-SATURATION_CHECKS:]
+    if len(last) < SATURATION_CHECKS or any(e["hilft"] for e in last):
+        return False, ""
+    gap = [(r.get("Ø genommen") or 0) - (r.get("Ø zufällig") or 0) for r in rounds]
+    if len(gap) >= 200 and np.mean(gap[100:]) > np.mean(gap[:100]) + 0.0002:
+        return False, ""
+    return True, (f"Die letzten {SATURATION_CHECKS} Prüfungen an echten Trades: Simulationen verbessern die Vorhersage "
+                  f"nicht (Trennschärfe ohne {last[-1].get('auc_ohne')}, mit {last[-1].get('auc_mit')}), und in der "
+                  f"Simulation selbst wird die KI nicht mehr besser. Bereits Gelerntes bleibt im Gedächtnis.")
+
+
+def _set_pause(d: Path, n_real: int, why: str) -> None:
+    prev = _pause_state(d) or {}
+    (d / "sim_pause.json").write_text(json.dumps({
+        "pausiert": True, "seit": prev.get("seit") or pd.Timestamp.now(tz="UTC").isoformat(),
+        "geprueft": pd.Timestamp.now(tz="UTC").isoformat(), "echte_trades": n_real, "grund": why,
+        "weiter_ab_echten_trades": n_real + RESUME_AFTER_REAL}, indent=2), encoding="utf-8")
+    try:  # Anzeige sofort aktualisieren, auch wenn keine Runde mehr läuft
+        st = json.loads((d / "sim_status.json").read_text(encoding="utf-8"))
+        (d / "sim_status.json").write_text(json.dumps({**st, "pause": _pause_state(d)}, indent=2, default=str),
+                                           encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _pause_state(d: Path) -> dict[str, Any] | None:
+    try:
+        return json.loads((d / "sim_pause.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # Kandidaten: Anteil ALLER Simulationen zusammen am Gewicht aller echten Trades (0,1 = Simulationen zählen wie ein Zehntel
@@ -384,27 +456,105 @@ def evaluate(user_data: Path | None = None) -> dict[str, Any]:
         x_tr, fill = self_learning._design(train, cols)
         p0 = self_learning._fit(x_tr, y_tr).predict_proba(self_learning._design(test, cols, fill)[0])[:, 1]
         rows = [{"Gewicht": 0.0, "AUC": _auc(y_te, p0), **_taken(test, p0, y_tr)}]
+        rel = self_learning.relevance(sim, train, cols)  # Relevanz nur aus dem Lernteil, der Test bleibt ungesehen
+        out["relevante_sims"] = self_learning.effective(rel)
         both = pd.concat([sim, train], ignore_index=True)
         is_sim = np.r_[np.ones(len(sim), bool), np.zeros(len(train), bool)]
         x_b, fill_b = self_learning._design(both, cols)
         x_te = self_learning._design(test, cols, fill_b)[0]
         for w in WEIGHTS:
-            m = self_learning._fit(x_b, (both["profit_pct"] > 0).to_numpy(int), sim=is_sim, sim_share=w)
+            m = self_learning._fit(x_b, (both["profit_pct"] > 0).to_numpy(int), sim=is_sim, sim_share=w, rel=rel)
             p = m.predict_proba(x_te)[:, 1]
             rows.append({"Gewicht": w, "AUC": _auc(y_te, p), **_taken(test, p, y_tr)})
         res = pd.DataFrame(rows)
-        best = res[res["Gewicht"] > 0].sort_values("AUC", ascending=False).iloc[0]
+        cand = res[res["Gewicht"] > 0]
+        best = cand.sort_values("AUC", ascending=False).iloc[0]
+        worse = rows[0]["AUC"] is not None and (best["AUC"] is None or rows[0]["AUC"] > best["AUC"])
+        if worse:  # keine Stufe hilft: so wenig wie möglich (immer verwertet, Burak 24.10.)
+            best = cand.sort_values("Gewicht").iloc[0]
         out.update(weight=float(best["Gewicht"]), sim_trades=len(sim), avg_all=float(test["profit_pct"].mean()),
                    results=res.to_dict("records"),
                    why=(f"Simulationen mit Anteil {best['Gewicht']} am besten (AUC {best['AUC']:.3f}; ohne "
-                        f"Simulationen {rows[0]['AUC']:.3f}" + (", ohne wäre besser – Anteil so klein wie getestet"
-                                                                if rows[0]["AUC"] is not None and best["AUC"] is not None
-                                                                and rows[0]["AUC"] > best["AUC"] else "") + ")"))
+                        f"Simulationen {rows[0]['AUC']:.3f}" + (", ohne wäre besser – kleinster getesteter Anteil"
+                                                                if worse else "") + ")"))
     d = sim_dir(user_data)
     d.mkdir(parents=True, exist_ok=True)
+    if "results" in out:
+        out["hilft"] = not worse
+        with open(d / "sim_evals.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"zeit": pd.Timestamp.now(tz="UTC").isoformat(), "hilft": not worse,
+                                "auc_ohne": round(rows[0]["AUC"] or 0, 3), "auc_mit": round(best["AUC"] or 0, 3),
+                                "anteil": float(best["Gewicht"]), "echte_trades": len(real)}) + "\n")
     (d / "sim_weight.json").write_text(json.dumps({**out, "checked_at": pd.Timestamp.now(tz="UTC").isoformat()},
                                                   indent=2, default=str), encoding="utf-8")
     return out
+
+
+def diagnose(user_data: Path | None = None) -> dict[str, Any]:
+    """Warum widersprechen Simulationen den echten Trades? (25.10.: schon 2 % Anteil drückt die AUC von 0,76 auf 0,44)
+
+    Prüft: Duplikate unter echten Trades, ob die 0,76 über mehrere Schnitte hält und mit reinen Kursmerkmalen,
+    wie gut ein NUR auf Simulationen gelerntes Modell echte Trades trifft, Gewinnquoten, und je Merkmal, ob es bei
+    echten Trades und Simulationen in dieselbe Richtung zeigt."""
+    from kitb import self_learning as sl
+    from kitb import shared_memory
+
+    real = shared_memory.load(user_data).dropna(subset=["profit_pct"]).sort_values("close_date").reset_index(drop=True)
+    cols = [c for c in shared_memory.SNAPSHOT_FEATURES if c in real and real[c].notna().mean() > 0.5]
+    price = [c for c in shared_memory.PRICE_FEATURES if c in cols]
+    sim = load(user_data)
+    out: dict[str, Any] = {"echte_trades": len(real), "sims": len(sim), "merkmale": len(cols)}
+    if len(real) < 2 * sl.MIN_TRADES or sim.empty:
+        return {**out, "why": "zu wenige Daten"}
+    key = ["pair", "open_date"] if "pair" in real else ["open_date"]
+    out["echte_ohne_duplikate"] = int(len(real.drop_duplicates(key)))
+    out["bots"] = real["ki"].value_counts().to_dict() if "ki" in real else {}
+    y = (real["profit_pct"] > 0).to_numpy(int)
+    ys = (sim["profit_pct"] > 0).to_numpy(int)
+    out["gewinnquote_echt"], out["gewinnquote_sim"] = float(y.mean()), float(ys.mean())
+    out["ø_echt"], out["ø_sim"] = float(real["profit_pct"].mean()), float(sim["profit_pct"].mean())
+
+    def auc_cut(frac: float, use: list[str]) -> float | None:
+        cut = int(len(real) * frac)
+        tr, te = real.iloc[:cut], real.iloc[cut:]
+        if np.unique(y[:cut]).size < 2:
+            return None
+        x, fill = sl._design(tr, use)
+        return _auc(y[cut:], sl._fit(x, y[:cut]).predict_proba(sl._design(te, use, fill)[0])[:, 1])
+
+    out["auc_ohne_sims_je_schnitt"] = {f: auc_cut(f, cols) for f in (0.4, 0.5, 0.6, 0.7)}
+    out["auc_ohne_sims_nur_kurs"] = {f: auc_cut(f, price) for f in (0.4, 0.5, 0.6, 0.7)} if price else {}
+    test = real.iloc[len(real) // 2:]
+    xs, fill = sl._design(sim, cols)
+    m = sl._fit(xs, ys)
+    out["auc_nur_sims_auf_echten"] = _auc((test["profit_pct"] > 0).to_numpy(int),
+                                          m.predict_proba(sl._design(test, cols, fill)[0])[:, 1])
+    xr = sl._design(real, cols, fill)[0]
+    rows = []
+    for c in cols:
+        cr = np.corrcoef(xr[c], y)[0, 1] if xr[c].std() > 0 else np.nan
+        cs = np.corrcoef(xs[c], ys)[0, 1] if xs[c].std() > 0 else np.nan
+        sd = xs[c].std() or 1.0
+        rows.append({"merkmal": c, "korr_echt": cr, "korr_sim": cs, "lage_echt_vs_sim": (xr[c].mean() - xs[c].mean()) / sd,
+                     "nan_echt": float(real[c].isna().mean()), "nan_sim": float(sim[c].isna().mean()) if c in sim else 1.0})
+    df = pd.DataFrame(rows)
+    out["gegenlaeufige_merkmale"] = df[np.sign(df["korr_echt"]) * np.sign(df["korr_sim"]) < 0] \
+        .sort_values("korr_echt", key=abs, ascending=False).head(10).round(3).to_dict("records")
+    out["staerkste_merkmale_echt"] = df.sort_values("korr_echt", key=abs, ascending=False).head(10).round(3) \
+        .to_dict("records")
+    out["fremdeste_merkmale"] = df.sort_values("lage_echt_vs_sim", key=abs, ascending=False).head(10).round(3) \
+        .to_dict("records")
+    d = paths_reports(user_data)
+    (d / "sim-diagnose.json").write_text(json.dumps(out, indent=2, default=str), encoding="utf-8")
+    return out
+
+
+def paths_reports(user_data: Path | None) -> Path:
+    from kitb import paths
+
+    d = (user_data or paths.USER_DATA) / "reports"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _taken(test: pd.DataFrame, p: np.ndarray, y_train: np.ndarray) -> dict[str, Any]:

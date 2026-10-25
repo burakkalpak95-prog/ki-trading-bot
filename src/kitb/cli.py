@@ -354,6 +354,9 @@ def cmd_simulate(args) -> int:
 
     if args.action in ("build", "all"):
         _print(simulate.build(datadir=paths.DATA_DIR / args.source))
+    if args.action == "diagnose":
+        _print(simulate.diagnose())
+        return 0
     if args.action == "loop":
         simulate.loop()
         return 0
@@ -618,7 +621,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_ki1_sweep)
 
     s = sub.add_parser("simulate", help="Simulierte Trades (was wäre wenn) als Lerndaten für die KIs")
-    s.add_argument("action", choices=["build", "eval", "all", "loop"])
+    s.add_argument("action", choices=["build", "eval", "all", "loop", "diagnose"])
     s.add_argument("--source", default="binance")
     s.set_defaults(func=cmd_simulate)
 

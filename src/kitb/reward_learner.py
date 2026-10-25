@@ -60,7 +60,11 @@ def with_simulations(memory: pd.DataFrame, n: int = 20_000) -> pd.DataFrame:
     from kitb.self_learning import sim_per_trade
 
     sim = sim[sim["ki"] != "simulation_aktie"].tail(n) if "ki" in sim else sim.tail(n)
-    sim = sim.assign(weight=sim_per_trade(len(memory), len(sim), simulate.weight()))  # zusammen: Anteil × echte Trades
+    from kitb.self_learning import relevance
+
+    rel = relevance(sim, memory.dropna(subset=["profit_pct"])) if not memory.empty else np.ones(len(sim))
+    # zusammen: Anteil × echte Trades; je Simulation nach Relevanz (wie sehr sie echten Marktlagen ähnelt)
+    sim = sim.assign(weight=sim_per_trade(len(memory), len(sim), simulate.weight()) * rel)
     mem = memory.assign(weight=1.0) if not memory.empty else memory
     return pd.concat([sim, mem], ignore_index=True)
 

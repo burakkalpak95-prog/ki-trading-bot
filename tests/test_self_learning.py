@@ -117,3 +117,20 @@ def test_design_tolerates_infinity():
     df = pd.DataFrame({"a": [1.0, np.inf, -np.inf, 2.0]})
     x, _ = self_learning._design(df, ["a"])
     assert np.isfinite(x.to_numpy()).all()
+
+
+def test_relevance_prefers_simulations_like_real_trades():
+    """Burak 25.10.: die KI nutzt nur, was sie selbst als brauchbar einstuft – Simulationen aus Marktlagen, die bei
+    echten Trades nie vorkommen, zählen kaum."""
+    import numpy as np
+    import pandas as pd
+
+    from kitb import self_learning
+
+    rng = np.random.default_rng(0)
+    real = pd.DataFrame({"rsi_14": rng.normal(50, 5, 200), "ret_1h": rng.normal(0, 0.01, 200), "profit_pct": 0.0})
+    near = pd.DataFrame({"rsi_14": rng.normal(50, 5, 500), "ret_1h": rng.normal(0, 0.01, 500)})
+    far = pd.DataFrame({"rsi_14": rng.normal(85, 3, 500), "ret_1h": rng.normal(0, 0.01, 500)})
+    rel = self_learning.relevance(pd.concat([near, far], ignore_index=True), real)
+    assert rel[:500].mean() > 5 * rel[500:].mean() and np.isclose(rel.mean(), 1.0)
+    assert self_learning.effective(rel) < 1000
