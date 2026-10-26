@@ -117,6 +117,9 @@ def simulate(df: pd.DataFrame, cost: float) -> tuple[pd.DataFrame, pd.Series]:
             pending_entry = True
         elif entry is not None and exit_[i] == 1:
             pending_exit = True
+    if entry is not None:  # wie Freqtrade: offene Position am Ende zum letzten Schlusskurs schließen
+        trades.append((df["date"].iat[entry_i], df["date"].iat[n - 1], c[-1] / entry * (1 - cost) ** 2 - 1, "ende"))
+        eq[-1] = cash * c[-1] / entry * (1 - cost)
     t = pd.DataFrame(trades, columns=["open_date", "close_date", "ret", "exit"])
     return t, pd.Series(eq, index=df["date"])
 
