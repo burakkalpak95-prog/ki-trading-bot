@@ -12,9 +12,11 @@ mit einem eigenen, kleinen Ablauf statt der Freqtrade-Engine:
 - **Kosten:** Gebühr + Slippage je Seite (Standard 0,1 % + 0,05 %), Stresslauf mit doppelten Kosten.
 - **Kapital:** je Paar gleich viel, eine Position je Paar, keine Umschichtung (Portfolio = Mittel der Paar-Kurven).
 - **Walk-Forward:** Testfenster von ``--test-months`` (Standard 3) über die letzten ``--years`` Jahre, davor jeweils
-  ``--train-months`` (Standard 6) Training. Die Regeln haben keine angepassten Parameter. Das Training wählt deshalb nur
-  je Stil die Zeitebene (15m/1h/4h) mit der besten Netto-Rendite im Trainingsfenster („<stil>_wf“). Bewertet werden
-  nur die Testfenster. Eine Position, die vor dem Testfenster eröffnet wurde, zählt mit ihrer Wertänderung im Fenster.
+  ``--train-months`` (Standard 6) Training. Bewertet werden nur die Testfenster. Eine Position, die vor dem Testfenster
+  eröffnet wurde, zählt mit ihrer Wertänderung im Fenster. Getestet werden nur feste Zeitebenen. Die Regeln haben keine
+  angepassten Parameter, deshalb hat das Training keine Aufgabe.
+  **Verworfen (Burak 26.10.2026):** die adaptive Wahl der Zeitebene im Training („<stil>_wf“). Sie schnitt schlechter
+  ab als fest 4h.
 - **Signifikanz gegen trend_d1:** einseitiger p-Wert aus einem Moving-Block-Bootstrap (Blöcke à 10 Tage) der täglichen
   Renditedifferenz in den Testfenstern, über alle getesteten Bots nach Holm korrigiert.
 
@@ -154,15 +156,8 @@ def windows(end: pd.Timestamp, years: int, train_m: int, test_m: int) -> list[tu
     return out
 
 
-def ret(eq: pd.Series, a, b) -> float:
-    s = eq[(eq.index >= a) & (eq.index < b)]
-    before = eq[eq.index < a]
-    first = before.iloc[-1] if len(before) else s.iloc[0]
-    return float(s.iloc[-1] / first - 1) if len(s) else 0.0
-
-
 def run(pairs: list[str], datadir: Path, years: int, train_m: int, test_m: int, cost: float,
-        n_boot: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+        n_boot: int, seed: int) -> tuple[pd.DataFrame, dict]:
     tfs = ("15m", "1h", "4h", "1d")
     candles = {(p, tf): load_candles(datadir, p, tf) for p in pairs + ["BTC/USDT"] for tf in tfs}
     end = min(candles[(p, "1d")]["date"].max() for p in pairs).normalize()
@@ -177,28 +172,15 @@ def run(pairs: list[str], datadir: Path, years: int, train_m: int, test_m: int, 
         curves[name] = pd.concat(daily, axis=1).ffill().bfill().mean(axis=1)
         trades[name] = pd.concat([t for t, _ in res], ignore_index=True)
 
-    # Walk-Forward-Auswahl: je Stil die Zeitebene mit der besten Netto-Rendite im Trainingsfenster
-    wf_pick = {}
-    for s in STYLES:
-        wf_pick[s] = [max(("15m", "1h", "4h"), key=lambda tf: ret(curves[f"{s}_{tf}"], tr, te)) for tr, te, _ in wins]
-
     def test_daily(name: str) -> pd.Series:
-        parts = []
-        for k, (_, a, b) in enumerate(wins):
-            src = f"{name[:-3]}_{wf_pick[name[:-3]][k]}" if name.endswith("_wf") else name
-            e = curves[src]
-            parts.append(e.pct_change()[(e.index >= a) & (e.index < b)])
-        return pd.concat(parts).fillna(0)
+        e = curves[name]
+        return pd.concat([e.pct_change()[(e.index >= a) & (e.index < b)] for _, a, b in wins]).fillna(0)
 
     def test_trades(name: str) -> pd.DataFrame:
-        parts = []
-        for k, (_, a, b) in enumerate(wins):
-            src = f"{name[:-3]}_{wf_pick[name[:-3]][k]}" if name.endswith("_wf") else name
-            t = trades[src]
-            parts.append(t[(t["open_date"] >= a) & (t["open_date"] < b)])
-        return pd.concat(parts, ignore_index=True)
+        t = trades[name]
+        return pd.concat([t[(t["open_date"] >= a) & (t["open_date"] < b)] for _, a, b in wins], ignore_index=True)
 
-    names = list(variants) + [f"{s}_wf" for s in STYLES]
+    names = list(variants)
     btc = candles[("BTC/USDT", "1d")].set_index("date")["close"]
     t0, t1 = wins[0][1], wins[-1][2]
     b = btc[(btc.index >= t0) & (btc.index < t1)]
@@ -225,10 +207,9 @@ def run(pairs: list[str], datadir: Path, years: int, train_m: int, test_m: int, 
     test = res["bot"] != BASELINE
     res.loc[test, "p_holm"] = holm(res.loc[test, "p_besser_als_trend_d1"]).round(4)
     res.loc[test, "signifikant_besser_als_trend_d1"] = res.loc[test, "p_holm"] < 0.05
-    picks = pd.DataFrame(wf_pick, index=[f"{a:%Y-%m-%d}–{b:%Y-%m-%d}" for _, a, b in wins])
     meta = {"testzeitraum": f"{t0:%Y-%m-%d} bis {t1:%Y-%m-%d}", "fenster": len(wins),
             "btc_halten_pct": round(btc_hold * 100, 2), "kosten_je_seite_pct": round(cost * 100, 3)}
-    return res.assign(**{k: v for k, v in meta.items() if k == "kosten_je_seite_pct"}), picks.assign(_meta=str(meta))
+    return res, meta
 
 
 def main() -> None:
@@ -250,14 +231,11 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     for label, factor in (("normal", 1), ("doppelte_kosten", 2)):
         cost = (args.fee + args.slippage) * factor
-        res, picks = run(args.pairs, args.datadir, args.years, args.train_months, args.test_months, cost,
+        res, meta = run(args.pairs, args.datadir, args.years, args.train_months, args.test_months, cost,
                          args.bootstrap, args.seed)
-        print(f"\n=== Kosten {label}: {cost:.2%} je Seite · {picks['_meta'].iloc[0]}")
-        print(res.drop(columns=["kosten_je_seite_pct"]).to_string(index=False))
-        print("\nWalk-Forward-Auswahl der Zeitebene je Testfenster:")
-        print(picks.drop(columns=["_meta"]).to_string())
+        print(f"\n=== Kosten {label}: {cost:.2%} je Seite · {meta}")
+        print(res.to_string(index=False))
         res.to_csv(args.out / f"backtest_{label}.csv", index=False)
-        picks.to_csv(args.out / f"backtest_wf_auswahl_{label}.csv")
     print(f"\nCSV in {args.out}")
 
 
