@@ -95,44 +95,17 @@ services:
   # Datensammler-Flotte (Profil "paper-learn", Freigabe Burak 22.10.2026): verschiedene Handelsarten im Dry-Run,
   # je 10.000 USDT virtuell. *_ki = gleiche Strategie mit KI-Filter, ohne Suffix = Kontrollgruppe ohne Filter.
   # Verlustlimit erreicht -> nur dieser Bot beginnt eine neue Runde mit frischem Kapital (alte Runde bleibt gespeichert).
-  paper-ema-cross-1h:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "ema_cross_1h"]
-  paper-trend-adx-1h:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "trend_adx_1h"]
-  paper-macd-rsi-1h:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "macd_rsi_1h"]
-  paper-donchian-1h:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "donchian_1h"]
-  paper-squeeze-1h:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "squeeze_1h"]
+  # 31.10.2026 (nur nach Freigabe Burak): alle 15m- und 1h-Stile abgeschaltet. Backtest 2023–2026 (backtest/run.py):
+  # 15m −86 bis −99 %, 1h −23 bis −52 %, Ertrag je Trade bei 8 von 10 signifikant negativ; Paper-Woche ebenfalls im
+  # Minus. Ihre alten Trades bleiben gespeichert (user_data/paper/<bot>) und im gemeinsamen Gedächtnis.
   paper-momentum-d1:
     <<: *paper-fleet
     command: ["paper", "run", "--bot", "momentum_d1"]
   # 25.10.2026: die 6 *_ki-Kopien sind abgeschaltet (Claude entscheidet die Flotte nach Datenwert, Burak 23.10.):
   # sie nahmen nur eine Teilmenge derselben Trades wie ihre Kontrollgruppe (doppelte Daten im Gedächtnis), kaum Trades
   # seit 23.10., ~0,5 GB RAM je Bot. Der Platz geht an 30 statt 16 Lern-Coins. Ihre alten Trades bleiben gespeichert.
-  paper-ema-cross-15m:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "ema_cross_15m"]
-  paper-trend-adx-15m:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "trend_adx_15m"]
-  paper-macd-rsi-15m:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "macd_rsi_15m"]
   # bollinger_15m abgeschaltet (25.10.2026): seit Start am 23.10. kein einziger Trade, im 30-Tage-Backtest nur 13 –
   # liefert kaum Lerndaten, belegt aber ~0,5 GB RAM.
-  paper-donchian-15m:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "donchian_15m"]
-  paper-squeeze-15m:
-    <<: *paper-fleet
-    command: ["paper", "run", "--bot", "squeeze_15m"]
   # 25.10.2026: alle Sammler oben sind Stil-KIs (Stil schlägt vor, KI entscheidet aus dem gemeinsamen Gedächtnis).
   # Neu: Trendfolge-KI auf Tageskerzen mit Bitcoin-Filter. Freigabe: kitb strategies approve --id trend_btc_d1
   paper-trend-btc-d1:
