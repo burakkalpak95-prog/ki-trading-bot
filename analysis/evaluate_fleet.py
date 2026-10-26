@@ -18,6 +18,10 @@ Vergleich je Bot über seinen eigenen Zeitraum (erster Einstieg bis letzter Auss
 Kurse: lokale 15m-Kerzen ``user_data/data/binance/<PAIR>-15m.parquet``; nach deren Ende die Ausführungskurse der
 Paper-Trades selbst (letzter bekannter Kurs vor dem Zeitpunkt).
 
+Rolle (Burak 26.10.2026): Datensammler zählen nicht zur Flottenbewertung und stehen in eigenen Tabellen. Datensammler
+sind alle KI-Bots aus ``bots`` in config/project.json (bot_a, bot_b, ki_trader; kitb.paper setzt sie im Paper-Betrieb
+auf "learning") und alle ``paper_strategies`` mit ``mode: learning`` (ki_reward). Alle übrigen werden bewertet.
+
 Aufruf:  python analysis/evaluate_fleet.py [--user-data user_data] [--out analysis/output]
 """
 
@@ -66,6 +70,13 @@ def load_trades(user_data: Path) -> pd.DataFrame:
     if (df["is_short"] == 1).any():
         raise SystemExit("Short-Trades gefunden – diese Auswertung rechnet nur Long/Spot.")
     return df
+
+
+def roles(project: dict) -> dict[str, str]:
+    out = {bot: "Datensammler" for bot in project.get("bots", {})}
+    for bot, spec in project.get("paper_strategies", {}).items():
+        out[bot] = "Datensammler" if spec.get("mode", "candidate") == "learning" else "bewertet"
+    return out
 
 
 def bootstrap_ci(x: np.ndarray, n_boot: int, seed: int) -> tuple[float, float]:
@@ -167,11 +178,15 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
-    costs = json.loads(args.project_config.read_text(encoding="utf-8"))["costs"]
+    project = json.loads(args.project_config.read_text(encoding="utf-8"))
+    costs = project["costs"]
     cost_per_side = costs["fee_per_side"] + costs["slippage_per_side"] + costs["half_spread_per_side"]
     df = load_trades(args.user_data)
     prices = Prices(args.user_data, df)
     stats, comp = evaluate(df, prices, cost_per_side, args.bootstrap, args.seed)
+    role = roles(project)
+    stats.insert(1, "rolle", stats["bot"].map(role).fillna("bewertet"))
+    comp.insert(1, "rolle", comp["bot"].map(role).fillna("bewertet"))
 
     closed = df[df["is_open"] == 0]
     check = (closed["gross"] - closed["amount"] * (closed["close_rate"] - closed["open_rate"])).abs().max()
@@ -179,14 +194,20 @@ def main() -> None:
     pd.set_option("display.max_columns", 30)
     print(f"Geschlossene Trades: {len(closed)} · offen: {int((df['is_open'] == 1).sum())} · "
           f"Netto gesamt: {closed['net'].sum():.2f} USDT · Gebühren gesamt: {closed['fees'].sum():.2f} USDT")
+    for r, g in closed.groupby(closed["bot"].map(role).fillna("bewertet")):
+        print(f"  {r}: {len(g)} Trades · Netto {g['net'].sum():.2f} USDT · Gebühren {g['fees'].sum():.2f} USDT")
     print(f"Prüfung Brutto = Menge × Kursdifferenz: größte Abweichung {check:.4f} USDT")
     for pair, end in prices.candle_end.items():
         if pair in ("BTC/USDT", "ETH/USDT"):
             print(f"Kerzen {pair} bis {end}; danach Kurse aus Paper-Ausführungen")
-    print("\nJe Bot und Trade-Typ (nur geschlossene Trades):")
-    print(stats[stats["trades"] > 0].to_string(index=False))
-    print(f"\nVergleich je Bot über seinen eigenen Zeitraum (BTC halten mit {cost_per_side:.2%} Kosten je Seite):")
-    print(comp.to_string(index=False))
+    for r in ("bewertet", "Datensammler"):
+        s = stats[(stats["rolle"] == r) & (stats["trades"] > 0)]
+        print(f"\n[{r}] Je Bot und Trade-Typ (nur geschlossene Trades):")
+        print(s.to_string(index=False) if len(s) else "-")
+    c = comp[comp["rolle"] == "bewertet"]
+    print(f"\n[bewertet] Vergleich je Bot über seinen eigenen Zeitraum (BTC halten mit {cost_per_side:.2%} Kosten je Seite):")
+    print(c.to_string(index=False) if len(c) else "-")
+    print("\n[Datensammler] ohne Vergleich mit trend_d1/BTC – sie liefern Lerndaten und gehen nicht in die Bewertung ein.")
     no_trades = sorted(set(df["bot"]) - set(closed["bot"]))
     print(f"\nOhne geschlossene Trades: {', '.join(no_trades) or '-'}")
 
