@@ -1,4 +1,4 @@
-"""Schlanker Walk-Forward-Backtest der Bot-Signale (Burak 26.10.2026, Aufgaben 3–5).
+"""Schlanker Backtest der Bot-Signale über feste Zeiträume (Burak 26.10.2026, Aufgaben 3–5 und Schritte 2–4).
 
 Wiederverwendet wird die Signal-Logik der Strategien aus ``user_data/strategies`` (``populate_indicators``,
 ``populate_entry_trend``, ``populate_exit_trend`` und ``stoploss``), nichts davon ist neu geschrieben. Ausgeführt wird
@@ -10,15 +10,17 @@ mit einem eigenen, kleinen Ablauf statt der Freqtrade-Engine:
   Der Stop wird vor dem Ausstiegssignal derselben Kerze geprüft (der Stop greift während der Kerze, das Signal erst
   an ihrem Schluss).
 - **Kosten:** Gebühr + Slippage je Seite (Standard 0,1 % + 0,05 %), Stresslauf mit doppelten Kosten.
-- **Kapital:** je Paar gleich viel, eine Position je Paar, keine Umschichtung (Portfolio = Mittel der Paar-Kurven).
-- **Walk-Forward:** Testfenster von ``--test-months`` (Standard 3) über die letzten ``--years`` Jahre, davor jeweils
-  ``--train-months`` (Standard 6) Training. Bewertet werden nur die Testfenster. Eine Position, die vor dem Testfenster
-  eröffnet wurde, zählt mit ihrer Wertänderung im Fenster. Getestet werden nur feste Zeitebenen. Die Regeln haben keine
-  angepassten Parameter, deshalb hat das Training keine Aufgabe.
-  **Verworfen (Burak 26.10.2026):** die adaptive Wahl der Zeitebene im Training („<stil>_wf“). Sie schnitt schlechter
-  ab als fest 4h.
+- **Zeiträume:** je ``--period`` startet das Konto ohne Position am ersten Tag. Die Indikatoren laufen auf allen
+  Kerzen davor warm. Am Ende wird eine offene Position zum letzten Schlusskurs geschlossen (wie Freqtrade, Abgleich in
+  backtest/engine_check.py). Standard sind die letzten 3 Jahre bis Datenende. Getestet werden nur feste Zeitebenen.
+  **Verworfen (Burak 26.10.2026):** die Walk-Forward-Wahl der Zeitebene („<stil>_wf“), weil sie schlechter abschnitt
+  als fest 4h. Ohne angepasste Parameter hat ein Trainingsfenster keine Aufgabe mehr.
+- **Drawdown:** auf der täglichen, zum Schlusskurs bewerteten Kontokurve (mit offenen Positionen). Freqtrade misst
+  ihn nur auf abgeschlossenen Trades.
+- **Kapitalmodell:** voll investiert, je Paar die Hälfte, eine Position je Paar, keine Umschichtung. Die Paper-Bots setzen über ``RiskManagedMixin`` nur etwa
+  20–40 % je Trade ein, ihre Rendite und ihr Drawdown wären entsprechend kleiner.
 - **Signifikanz gegen trend_d1:** einseitiger p-Wert aus einem Moving-Block-Bootstrap (Blöcke à 10 Tage) der täglichen
-  Renditedifferenz in den Testfenstern, über alle getesteten Bots nach Holm korrigiert.
+  Renditedifferenz im Zeitraum, je Zeitraum über alle getesteten Bots nach Holm korrigiert.
 
 **Nicht enthalten:** die KI-Entscheidung. Im Backtest sind ``StyleAiMixin`` und das gemeinsame Gedächtnis aus
 (kitb.rule_learning: „Ohne kitb_style_ai … verhält sich die Strategie unverändert“). Getestet wird also, was der Stil
@@ -28,7 +30,8 @@ Live-Gedächtnis) lassen sich so nicht ohne Lookahead nachstellen und fehlen.
 Kerzen: lokaler Cache ``user_data/data/binance/<PAIR>-<tf>.parquet`` (Freqtrade-Format). Fehlt etwas, vorher
 ``kitb download`` ausführen. Die letzte Kerze jeder Datei wird verworfen, weil sie unvollständig sein kann.
 
-Aufruf:  python backtest/run.py [--pairs BTC/USDT ETH/USDT] [--years 3] [--out backtest/output]
+Aufruf:  python backtest/run.py [--pairs BTC/USDT ETH/USDT] [--period baer2022=20220101-20230101 ...]
+         [--bots trend_d1 donchian_4h ...] [--out backtest/output]
 """
 
 import argparse
@@ -42,6 +45,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "user_data" / "strategies")]
 
 BASELINE = "trend_d1"
+MIN_TRADES = 30  # darunter erlaubt das Bootstrap-Intervall keine Aussage (wie kitb.backtest.MIN_TRADES_FOR_STATS)
 TF_MINUTES = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
 # Name im Paper-Betrieb -> Strategieklasse. Stil-Bots laufen dort auf 15m und 1h; 4h ist der Zusatz für Aufgabe 5.
 STYLES = {"ema_cross": "BaselineEmaCross", "trend_adx": "TrendEmaAdx", "macd_rsi": "MomentumMacdRsi",
@@ -151,77 +155,81 @@ def holm(p: pd.Series) -> pd.Series:
     return pd.Series(np.minimum(adj, 1.0), index=order.index).reindex(p.index)
 
 
-def windows(end: pd.Timestamp, years: int, train_m: int, test_m: int) -> list[tuple]:
-    out, start = [], end - pd.DateOffset(years=years)
-    while start + pd.DateOffset(months=test_m) <= end:
-        out.append((start - pd.DateOffset(months=train_m), start, start + pd.DateOffset(months=test_m)))
-        start += pd.DateOffset(months=test_m)
-    return out
+def parse_period(text: str) -> tuple[str, pd.Timestamp, pd.Timestamp | None]:
+    """``name=YYYYMMDD-YYYYMMDD`` (Ende ausschließlich; leeres Ende = bis zum Datenende)."""
+    name, _, rng = text.partition("=")
+    a, _, b = rng.partition("-")
+    return name, pd.Timestamp(a, tz="UTC"), pd.Timestamp(b, tz="UTC") if b else None
 
 
-def run(pairs: list[str], datadir: Path, years: int, train_m: int, test_m: int, cost: float,
-        n_boot: int, seed: int) -> tuple[pd.DataFrame, dict]:
-    tfs = ("15m", "1h", "4h", "1d")
-    candles = {(p, tf): load_candles(datadir, p, tf) for p in pairs + ["BTC/USDT"] for tf in tfs}
-    end = min(candles[(p, "1d")]["date"].max() for p in pairs).normalize()
-    wins = windows(end, years, train_m, test_m)
-
+def run(pairs: list[str], datadir: Path, periods: list[tuple], cost: float, n_boot: int, seed: int,
+        bots: list[str] | None = None) -> pd.DataFrame:
     variants = {f"{s}_{tf}": (cls, tf) for s, cls in STYLES.items() for tf in ("15m", "1h", "4h")}
     variants |= {name: (cls, "1d") for name, cls in DAILY.items()}
-    curves, trades = {}, {}
-    for name, (cls, tf) in variants.items():
-        res = [simulate(signals(cls, tf, p, candles), cost) for p in pairs]
-        daily = [e.resample("1D").last().ffill() for _, e in res]
-        curves[name] = pd.concat(daily, axis=1).ffill().bfill().mean(axis=1)
-        trades[name] = pd.concat([t for t, _ in res], ignore_index=True)
+    if bots:
+        variants = {k: v for k, v in variants.items() if k in set(bots) | {BASELINE}}
+    tfs = {tf for _, tf in variants.values()} | {"1d"}
+    candles = {(p, tf): load_candles(datadir, p, tf) for p in set(pairs) | {"BTC/USDT"} for tf in tfs}
+    data_end = min(candles[(p, "1d")]["date"].max() for p in pairs) + pd.Timedelta("1D")
+    sig = {(name, p): signals(cls, tf, p, candles) for name, (cls, tf) in variants.items() for p in pairs}
+    btc = candles[("BTC/USDT", "1d")]
 
-    def test_daily(name: str) -> pd.Series:
-        e = curves[name]
-        return pd.concat([e.pct_change()[(e.index >= a) & (e.index < b)] for _, a, b in wins]).fillna(0)
-
-    def test_trades(name: str) -> pd.DataFrame:
-        t = trades[name]
-        return pd.concat([t[(t["open_date"] >= a) & (t["open_date"] < b)] for _, a, b in wins], ignore_index=True)
-
-    names = list(variants)
-    btc = candles[("BTC/USDT", "1d")].set_index("date")["close"]
-    t0, t1 = wins[0][1], wins[-1][2]
-    b = btc[(btc.index >= t0) & (btc.index < t1)]
-    btc_hold = float(b.iloc[-1] / b.iloc[0] * (1 - cost) ** 2 - 1)
-    base = test_daily(BASELINE)
-    rows = []
-    for name in names:
-        d, t = test_daily(name), test_trades(name)
-        eq = (1 + d).cumprod()
-        x = t["ret"].to_numpy(float)
-        lo, hi = bootstrap_ci(x, n_boot, seed)
-        diff = (d - base.reindex(d.index).fillna(0)).to_numpy()
-        rows.append({
-            "bot": name, "trades": len(t), "netto_rendite_pct": round((eq.iloc[-1] - 1) * 100, 2),
-            "je_trade_pct": round(x.mean() * 100, 3) if len(x) else np.nan,
-            "ci95_low_pct": round(lo * 100, 3), "ci95_high_pct": round(hi * 100, 3),
-            "zufall_nicht_unterscheidbar": bool(lo <= 0 <= hi) if len(x) >= 2 else None,
-            "max_drawdown_pct": round(float((eq / eq.cummax() - 1).min()) * 100, 2),
-            "vs_trend_d1_pct": round((eq.iloc[-1] - (1 + base).cumprod().iloc[-1]) * 100, 2),
-            "vs_btc_halten_pct": round((eq.iloc[-1] - 1 - btc_hold) * 100, 2),
-            "p_besser_als_trend_d1": np.nan if name == BASELINE else block_bootstrap_p(diff, n_boot, seed),
-        })
-    res = pd.DataFrame(rows)
-    test = res["bot"] != BASELINE
-    res.loc[test, "p_holm"] = holm(res.loc[test, "p_besser_als_trend_d1"]).round(4)
-    res.loc[test, "signifikant_besser_als_trend_d1"] = res.loc[test, "p_holm"] < 0.05
-    meta = {"testzeitraum": f"{t0:%Y-%m-%d} bis {t1:%Y-%m-%d}", "fenster": len(wins),
-            "btc_halten_pct": round(btc_hold * 100, 2), "kosten_je_seite_pct": round(cost * 100, 3)}
-    return res, meta
+    out = []
+    for pname, start, end in periods:
+        end = min(end or data_end, data_end)
+        curves, trades = {}, {}
+        for name in variants:
+            res = []
+            for p in pairs:
+                s = sig[(name, p)]
+                res.append(simulate(s[(s["date"] >= start) & (s["date"] < end)].reset_index(drop=True), cost))
+            daily = [e.resample("1D").last().ffill() for _, e in res]
+            curves[name] = pd.concat(daily, axis=1).ffill().bfill().mean(axis=1)
+            trades[name] = pd.concat([t for t, _ in res], ignore_index=True)
+        b = btc[(btc["date"] >= start) & (btc["date"] < end)]
+        btc_eq = b["close"] / b["open"].iloc[0] * (1 - cost)
+        btc_hold = float(btc_eq.iloc[-1] * (1 - cost) - 1)
+        btc_dd = float((btc_eq / btc_eq.cummax() - 1).min())
+        base_eq = curves[BASELINE]
+        base = base_eq.pct_change().fillna(base_eq.iloc[0] - 1)
+        rows = []
+        for name in variants:
+            eq = curves[name]
+            d = eq.pct_change().fillna(eq.iloc[0] - 1)
+            t = trades[name]
+            x = t["ret"].to_numpy(float)
+            lo, hi = bootstrap_ci(x, n_boot, seed)
+            diff = (d - base.reindex(d.index).fillna(0)).to_numpy()
+            rows.append({
+                "zeitraum": pname, "von": f"{start:%Y-%m-%d}", "bis": f"{end - pd.Timedelta('1D'):%Y-%m-%d}",
+                "bot": name, "trades": len(t),
+                "erster_trade": f"{t['open_date'].min():%Y-%m-%d}" if len(t) else "",
+                "zu_wenige_trades": len(t) < MIN_TRADES,
+                "netto_rendite_pct": round((eq.iloc[-1] - 1) * 100, 2),
+                "max_drawdown_pct": round(float((eq / eq.cummax() - 1).min()) * 100, 2),
+                "je_trade_pct": round(x.mean() * 100, 3) if len(x) else np.nan,
+                "ci95_low_pct": round(lo * 100, 3), "ci95_high_pct": round(hi * 100, 3),
+                "zufall_nicht_unterscheidbar": bool(lo <= 0 <= hi) if len(x) >= 2 else None,
+                "btc_halten_pct": round(btc_hold * 100, 2), "btc_halten_dd_pct": round(btc_dd * 100, 2),
+                "vs_btc_halten_pp": round((eq.iloc[-1] - 1 - btc_hold) * 100, 2),
+                "vs_trend_d1_pp": round((eq.iloc[-1] - base_eq.iloc[-1]) * 100, 2),
+                "p_besser_als_trend_d1": np.nan if name == BASELINE else block_bootstrap_p(diff, n_boot, seed),
+            })
+        res = pd.DataFrame(rows)
+        test = res["bot"] != BASELINE
+        res.loc[test, "p_holm"] = holm(res.loc[test, "p_besser_als_trend_d1"]).round(4)
+        res.loc[test, "signifikant_besser_als_trend_d1"] = res.loc[test, "p_holm"] < 0.05
+        out.append(res)
+    return pd.concat(out, ignore_index=True)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--pairs", nargs="+", default=["BTC/USDT", "ETH/USDT"])
     ap.add_argument("--datadir", type=Path, default=ROOT / "user_data" / "data" / "binance")
-    ap.add_argument("--years", type=int, default=3)
-    ap.add_argument("--train-months", type=int, default=6)
-    ap.add_argument("--test-months", type=int, default=3)
+    ap.add_argument("--period", action="append", type=parse_period,
+                    help="name=YYYYMMDD-YYYYMMDD, mehrfach möglich (Standard: die letzten 3 Jahre bis Datenende)")
+    ap.add_argument("--bots", nargs="+", help="nur diese Bots (trend_d1 ist immer dabei)")
     ap.add_argument("--fee", type=float, default=0.001, help="Gebühr je Seite (0.001 = 0,1 %)")
     ap.add_argument("--slippage", type=float, default=0.0005, help="Slippage je Seite")
     ap.add_argument("--bootstrap", type=int, default=10_000)
@@ -229,15 +237,18 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=ROOT / "backtest" / "output")
     args = ap.parse_args()
 
+    if not args.period:
+        end = min(load_candles(args.datadir, p, "1d")["date"].max() for p in args.pairs) + pd.Timedelta("1D")
+        args.period = [("3jahre", end - pd.DateOffset(years=3), None)]
     pd.set_option("display.width", 250)
     pd.set_option("display.max_columns", 30)
     args.out.mkdir(parents=True, exist_ok=True)
     for label, factor in (("normal", 1), ("doppelte_kosten", 2)):
         cost = (args.fee + args.slippage) * factor
-        res, meta = run(args.pairs, args.datadir, args.years, args.train_months, args.test_months, cost,
-                         args.bootstrap, args.seed)
-        print(f"\n=== Kosten {label}: {cost:.2%} je Seite · {meta}")
-        print(res.to_string(index=False))
+        res = run(args.pairs, args.datadir, args.period, cost, args.bootstrap, args.seed, args.bots)
+        print(f"\n=== Kosten {label}: {cost:.2%} je Seite")
+        for _, g in res.groupby("zeitraum", sort=False):
+            print(g.to_string(index=False))
         res.to_csv(args.out / f"backtest_{label}.csv", index=False)
     print(f"\nCSV in {args.out}")
 
